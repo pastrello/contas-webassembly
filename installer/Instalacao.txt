@@ -1,0 +1,14 @@
+﻿CAIXA MODERNIZADO
+
+Este instalador instala ou atualiza o programa para o usuário atual do Windows.
+O .NET está incluído: não é necessário instalá-lo separadamente.
+
+Se o Caixa Modernizado estiver aberto, feche-o salvando suas alterações antes
+de continuar. A instalação não encerra o programa à força.
+
+O banco de dados e os backups permanecem separados do programa:
+%LOCALAPPDATA%\CaixaModernizado
+
+A instalação, a atualização e a desinstalação não excluem essa pasta.
+Em outro computador, use a restauração de backup dentro do programa para
+recuperar seus dados. O instalador não contém dados financeiros.

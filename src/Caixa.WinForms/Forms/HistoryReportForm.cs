@@ -15,6 +15,7 @@ public sealed class HistoryReportForm : Form
     private readonly CheckedListBox _histories = new();
     private readonly DataGridView _grid = new();
     private readonly Label _summary = new();
+    private PdfReportExporter.Options? _reportOptions;
 
     public HistoryReportForm(CaixaApplication app)
     {
@@ -133,6 +134,9 @@ public sealed class HistoryReportForm : Form
 
         _grid.DataSource = data;
         _summary.Text = $"{data.Count} registro(s) | Entradas: {data.Sum(x => x.Credit):C2} | Saídas: {data.Sum(x => x.Debit):C2} | Diferença: {data.Sum(x => x.Credit) - data.Sum(x => x.Debit):C2}";
+        var historyText = string.Join(", ", _histories.CheckedItems.Cast<HistoryItem>().Select(h => $"{h.Code} - {h.Description}"));
+        _reportOptions = new PdfReportExporter.Options(_app.Settings.Get().CompanyName,
+            Text, account.ToString(), start, end, $"Históricos: {historyText}", _summary.Text);
     }
 
     private void ExportCsv()
@@ -157,46 +161,26 @@ public sealed class HistoryReportForm : Form
 
     private void ExportPdf()
     {
-        if (_account.SelectedItem is not Account account || _grid.Rows.Count == 0)
+        if (_reportOptions is not { } options || _grid.Rows.Count == 0)
         {
             MessageBox.Show(this, "Não há dados para gerar o PDF.", "Relatório PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        var selected = _histories.CheckedItems.Cast<HistoryItem>().ToList();
-        if (selected.Count == 0)
-        {
-            MessageBox.Show(this, "Marque ao menos um histórico.");
-            return;
-        }
-
-        var start = DateOnly.FromDateTime(_start.Value.Date);
-        var end = DateOnly.FromDateTime(_end.Value.Date);
         using var dlg = new SaveFileDialog
         {
             Title = "Salvar relatório em PDF",
             Filter = "PDF (*.pdf)|*.pdf",
             DefaultExt = "pdf",
             AddExtension = true,
-            FileName = $"historicos-{account.Code}-{start:yyyyMMdd}-{end:yyyyMMdd}.pdf"
+            FileName = $"historicos-{options.StartDate:yyyyMMdd}-{options.EndDate:yyyyMMdd}.pdf"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
-
-        var historyText = string.Join(", ", selected.Select(h => $"{h.Code} - {h.Description}"));
-        if (historyText.Length > 500)
-            historyText = historyText[..497] + "...";
 
         try
         {
             Cursor = Cursors.WaitCursor;
-            PdfReportExporter.Export(_grid, dlg.FileName, new PdfReportExporter.Options(
-                CompanyName: _app.Settings.Get().CompanyName,
-                Title: Text,
-                Account: account.ToString(),
-                StartDate: start,
-                EndDate: end,
-                FilterDescription: $"Históricos: {historyText}",
-                Summary: _summary.Text));
+            PdfReportExporter.Export(_grid, dlg.FileName, options);
         }
         catch (Exception ex)
         {

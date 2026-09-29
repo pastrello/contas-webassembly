@@ -22,6 +22,7 @@ public sealed class TransactionSearchForm : Form
     private readonly NumericUpDown _maxAmount = new();
     private readonly DataGridView _grid = new();
     private readonly Label _summary = new();
+    private PdfReportExporter.Options? _reportOptions;
 
     public TransactionSearchForm(CaixaApplication app)
     {
@@ -143,7 +144,8 @@ public sealed class TransactionSearchForm : Form
         try
         {
             Cursor = Cursors.WaitCursor;
-            var rows = _app.Reports.SearchTransactions(BuildCriteria()).Select(t => new SearchRow
+            var criteria = BuildCriteria();
+            var rows = _app.Reports.SearchTransactions(criteria).Select(t => new SearchRow
             {
                 Account = $"{t.AccountCode} - {t.AccountName}", Date = t.Date.ToString("dd/MM/yyyy"), Document = t.DocumentNumber,
                 History = $"{t.HistoryCode} - {t.HistoryDescription}", Description = t.Description,
@@ -153,6 +155,9 @@ public sealed class TransactionSearchForm : Form
             _grid.DataSource = rows;
             var credit = rows.Sum(r => r.Credit); var debit = rows.Sum(r => r.Debit);
             _summary.Text = $"{rows.Count} registro(s) | Entradas: {credit:C2} | Saídas: {debit:C2} | Movimento líquido: {credit - debit:C2}";
+            _reportOptions = new PdfReportExporter.Options(_app.Settings.Get().CompanyName,
+                "Consulta avançada de lançamentos", ((AccountFilter)_account.SelectedItem!).Text,
+                criteria.StartDate, criteria.EndDate, BuildFilterDescription(), _summary.Text);
         }
         catch (Exception ex) { UiHelpers.ShowError(this, ex); }
         finally { Cursor = Cursors.Default; }
@@ -169,15 +174,12 @@ public sealed class TransactionSearchForm : Form
 
     private void ExportPdf()
     {
-        if (_grid.Rows.Count == 0) { MessageBox.Show(this, "Não há dados para gerar o PDF."); return; }
-        var criteria = BuildCriteria();
+        if (_reportOptions is not { } options || _grid.Rows.Count == 0) { MessageBox.Show(this, "Não há dados para gerar o PDF."); return; }
         using var dlg = new SaveFileDialog { Filter = "PDF (*.pdf)|*.pdf", FileName = $"consulta-lancamentos-{DateTime.Now:yyyyMMdd-HHmm}.pdf" };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            var accountText = ((AccountFilter)_account.SelectedItem!).Id.HasValue ? ((AccountFilter)_account.SelectedItem!).Text : "Todas as contas";
-            PdfReportExporter.Export(_grid, dlg.FileName, new PdfReportExporter.Options(_app.Settings.Get().CompanyName,
-                "Consulta avançada de lançamentos", accountText, criteria.StartDate, criteria.EndDate, BuildFilterDescription(), _summary.Text));
+            PdfReportExporter.Export(_grid, dlg.FileName, options);
             PdfReportExporter.OfferOpen(this, dlg.FileName);
         }
         catch (Exception ex) { UiHelpers.ShowError(this, ex); }

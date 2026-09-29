@@ -32,12 +32,19 @@ public sealed class BalanceService
         return new BalanceSnapshot(account.OpeningBalanceCents, real, cleared, real - cleared);
     }
 
-    public List<StatementLine> BuildStatement(long accountId, DateOnly start, DateOnly end)
+    /// <summary>Saldo real imediatamente anterior ao período, inclusive movimentos arquivados.</summary>
+    public long CalculateBefore(long accountId, DateOnly start)
     {
         var account = _accounts.GetById(accountId) ?? throw new InvalidOperationException("Conta não encontrada.");
         var running = account.OpeningBalanceCents;
         foreach (var tx in _transactions.GetIncludedBefore(accountId, start))
             running += tx.AmountCents * tx.Direction;
+        return running;
+    }
+
+    public List<StatementLine> BuildStatement(long accountId, DateOnly start, DateOnly end)
+    {
+        var running = CalculateBefore(accountId, start);
 
         var rows = _transactions.GetByPeriod(accountId, start, end)
             .Where(t => !t.LegacyRolledIntoOpeningBalance)

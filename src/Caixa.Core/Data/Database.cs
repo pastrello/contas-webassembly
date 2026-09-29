@@ -24,16 +24,31 @@ public sealed class Database
             Mode = SqliteOpenMode.ReadWriteCreate
         }.ToString();
         var connection = new SqliteConnection(cs);
-        connection.Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
-        cmd.ExecuteNonQuery();
-        return connection;
+        try
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
+            cmd.ExecuteNonQuery();
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
     }
 
     public void Initialize()
     {
         using var cn = OpenConnection();
+        using (var version = cn.CreateCommand())
+        {
+            version.CommandText = "PRAGMA user_version;";
+            var current = Convert.ToInt32(version.ExecuteScalar());
+            if (current > CurrentUserVersion)
+                throw new InvalidDataException($"O banco usa um esquema mais novo ({current}) que o suportado ({CurrentUserVersion}). Atualize o programa.");
+        }
         using var cmd = cn.CreateCommand();
         cmd.CommandText = """
             PRAGMA journal_mode=WAL;

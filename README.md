@@ -80,6 +80,19 @@ publish-win-x64.cmd
 
 O script gera uma publicação Release self-contained para Windows x64.
 
+## Instalador Windows
+
+Para publicar e gerar o instalador com Inno Setup 6.3 ou superior:
+
+```bat
+build-installer.cmd
+```
+
+O Setup é gerado em `dist/`, inclui o .NET e instala para o usuário atual.
+O mesmo instalador atualiza versões anteriores, preservando o banco e os backups.
+A versão é definida em `Directory.Build.props` e também aparece na tela Sobre.
+Consulte [Instalação e distribuição](docs/09-INSTALADOR.md) para os detalhes e testes.
+
 ## Banco de dados
 
 O banco é criado automaticamente em:

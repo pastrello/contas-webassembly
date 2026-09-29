@@ -39,12 +39,33 @@ public sealed class HistoryRepository
 
     public long Save(HistoryItem item)
     {
+        if (string.IsNullOrWhiteSpace(item.Code)) throw new InvalidOperationException("Informe o código do histórico.");
         item.Code = item.Code.Trim().PadLeft(2, '0');
         if (string.IsNullOrWhiteSpace(item.Description)) throw new InvalidOperationException("Informe a descrição do histórico.");
         item.Direction = item.Direction >= 0 ? 1 : -1;
 
         using var cn = _db.OpenConnection();
+        // A consulta e a gravação compartilham a transação para preservar a direção
+        // dos movimentos mesmo se outro acesso gravar no banco simultaneamente.
+        using var transaction = cn.BeginTransaction();
+        if (item.Id != 0)
+        {
+            using var check = cn.CreateCommand();
+            check.Transaction = transaction;
+            check.CommandText = """
+                SELECT EXISTS(
+                    SELECT 1 FROM histories h
+                    WHERE h.id=$id AND h.direction<>$direction
+                      AND EXISTS(SELECT 1 FROM transactions t WHERE t.history_id=h.id)
+                );
+                """;
+            check.Parameters.AddWithValue("$id", item.Id);
+            check.Parameters.AddWithValue("$direction", item.Direction);
+            if (Convert.ToInt64(check.ExecuteScalar()) != 0)
+                throw new InvalidOperationException("Não é possível alterar Entrada/Saída de um histórico com lançamentos. Crie outro histórico para o novo tipo.");
+        }
         using var cmd = cn.CreateCommand();
+        cmd.Transaction = transaction;
         if (item.Id == 0)
         {
             cmd.CommandText = """
@@ -66,7 +87,9 @@ public sealed class HistoryRepository
         cmd.Parameters.AddWithValue("$description", item.Description.Trim());
         cmd.Parameters.AddWithValue("$direction", item.Direction);
         cmd.Parameters.AddWithValue("$active", item.IsActive ? 1 : 0);
-        item.Id = Convert.ToInt64(cmd.ExecuteScalar());
+        var id = Convert.ToInt64(cmd.ExecuteScalar());
+        transaction.Commit();
+        item.Id = id;
         return item.Id;
     }
 

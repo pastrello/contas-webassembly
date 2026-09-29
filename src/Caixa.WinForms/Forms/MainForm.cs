@@ -52,6 +52,11 @@ public partial class MainForm : Form
         lblAccountCount.Text = $"{rows.Count} conta(s)";
     }
 
+    private void OpenDialog(Form form)
+    {
+        using (form) form.ShowDialog(this);
+    }
+
     private void OpenAndRefresh(Form form)
     {
         using (form)
@@ -63,14 +68,14 @@ public partial class MainForm : Form
     private void mnuHistories_Click(object? sender, EventArgs e) => OpenAndRefresh(new HistoriesForm(_app));
     private void mnuSettings_Click(object? sender, EventArgs e) => OpenAndRefresh(new SettingsForm(_app));
     private void mnuTransactions_Click(object? sender, EventArgs e) => OpenAndRefresh(new TransactionsForm(_app));
-    private void mnuTransactionSearch_Click(object? sender, EventArgs e) => new TransactionSearchForm(_app).ShowDialog(this);
-    private void mnuStatement_Click(object? sender, EventArgs e) => new PeriodReportForm(_app, PeriodReportMode.Statement).ShowDialog(this);
-    private void mnuConsistency_Click(object? sender, EventArgs e) => new PeriodReportForm(_app, PeriodReportMode.Consistency).ShowDialog(this);
-    private void mnuCheckForecast_Click(object? sender, EventArgs e) => new PeriodReportForm(_app, PeriodReportMode.CheckForecast).ShowDialog(this);
+    private void mnuTransactionSearch_Click(object? sender, EventArgs e) => OpenDialog(new TransactionSearchForm(_app));
+    private void mnuStatement_Click(object? sender, EventArgs e) => OpenDialog(new PeriodReportForm(_app, PeriodReportMode.Statement));
+    private void mnuConsistency_Click(object? sender, EventArgs e) => OpenDialog(new PeriodReportForm(_app, PeriodReportMode.Consistency));
+    private void mnuCheckForecast_Click(object? sender, EventArgs e) => OpenDialog(new PeriodReportForm(_app, PeriodReportMode.CheckForecast));
     private void mnuArchive_Click(object? sender, EventArgs e) => OpenAndRefresh(new ArchiveForm(_app));
-    private void mnuArchived_Click(object? sender, EventArgs e) => new PeriodReportForm(_app, PeriodReportMode.Archived).ShowDialog(this);
-    private void mnuHistoryReport_Click(object? sender, EventArgs e) => new HistoryReportForm(_app).ShowDialog(this);
-    private void mnuMaintenance_Click(object? sender, EventArgs e) => new DatabaseMaintenanceForm(_app).ShowDialog(this);
+    private void mnuArchived_Click(object? sender, EventArgs e) => OpenDialog(new PeriodReportForm(_app, PeriodReportMode.Archived));
+    private void mnuHistoryReport_Click(object? sender, EventArgs e) => OpenDialog(new HistoryReportForm(_app));
+    private void mnuMaintenance_Click(object? sender, EventArgs e) => OpenDialog(new DatabaseMaintenanceForm(_app));
 
     private void mnuBackup_Click(object? sender, EventArgs e)
     {
@@ -174,7 +179,7 @@ public partial class MainForm : Form
         return $"{value:N2} {units[unit]}";
     }
 
-    private void mnuAbout_Click(object? sender, EventArgs e) => new AboutForm().ShowDialog(this);
+    private void mnuAbout_Click(object? sender, EventArgs e) => OpenDialog(new AboutForm());
     private void mnuExit_Click(object? sender, EventArgs e) => Close();
 
     private sealed class AccountDashboardRow

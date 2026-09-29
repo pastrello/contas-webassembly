@@ -12,8 +12,13 @@ namespace Caixa.Core.Services;
 public sealed class BackupService
 {
     private readonly Database _db;
+    private readonly string? _preRestoreBackupDirectory;
 
-    public BackupService(Database db) => _db = db;
+    public BackupService(Database db, string? preRestoreBackupDirectory = null)
+    {
+        _db = db;
+        _preRestoreBackupDirectory = preRestoreBackupDirectory;
+    }
 
     public BackupResult CreateCompressed(string destinationFolder)
         => CreateCompressed(destinationFolder, "backup");
@@ -45,7 +50,7 @@ public sealed class BackupService
                     $"do que esta versão do programa suporta (user_version={Database.CurrentUserVersion}).");
             }
 
-            safetyBackup = CreateCompressed(AppPaths.PreRestoreBackupDirectory, "pre-restauracao");
+            safetyBackup = CreateCompressed(_preRestoreBackupDirectory ?? AppPaths.PreRestoreBackupDirectory, "pre-restauracao");
             RestoreSqliteSnapshot(snapshotPath);
             _db.Initialize();
             var restoredInfo = ValidateLiveDatabase();
@@ -246,6 +251,26 @@ public sealed class BackupService
             throw new InvalidDataException($"O SQLite não validou o banco. PRAGMA quick_check retornou: {quickCheck}");
 
         EnsureRequiredTables(cn);
+        using (var foreignKeys = cn.CreateCommand())
+        {
+            foreignKeys.CommandText = "PRAGMA foreign_key_check;";
+            using var violations = foreignKeys.ExecuteReader();
+            if (violations.Read())
+                throw new InvalidDataException("O banco contém referências inválidas entre tabelas (foreign_key_check).");
+        }
+
+        // Verifica também vínculos em bancos cujo esquema não declarou as FKs.
+        using (var references = cn.CreateCommand())
+        {
+            references.CommandText = """
+                SELECT EXISTS(SELECT 1 FROM transactions t
+                    LEFT JOIN accounts a ON a.id=t.account_id
+                    LEFT JOIN histories h ON h.id=t.history_id
+                    WHERE a.id IS NULL OR h.id IS NULL);
+                """;
+            if (Convert.ToInt64(references.ExecuteScalar()) != 0)
+                throw new InvalidDataException("O banco contém lançamentos sem conta ou histórico correspondente.");
+        }
 
         using var versionCmd = cn.CreateCommand();
         versionCmd.CommandText = "PRAGMA user_version;";
@@ -269,15 +294,31 @@ public sealed class BackupService
 
     private static void EnsureRequiredTables(SqliteConnection cn)
     {
-        string[] required = ["accounts", "histories", "transactions", "settings"];
+        // Colunas usadas pelo programa; colunas adicionais são aceitas.
+        var required = new Dictionary<string, string[]>
+        {
+            ["accounts"] = ["id", "code", "number", "name", "opening_balance_cents", "legacy_stored_real_cents", "legacy_stored_cleared_cents", "is_active", "created_at"],
+            ["histories"] = ["id", "code", "description", "direction", "is_active"],
+            ["transactions"] = ["id", "account_id", "date", "document_number", "history_id", "amount_cents", "is_cleared", "is_archived", "legacy_rolled_into_opening_balance", "description", "legacy_source", "legacy_record_number", "created_at", "updated_at"],
+            ["settings"] = ["key", "value"]
+        };
 
-        foreach (var table in required)
+        foreach (var (table, columns) in required)
         {
             using var cmd = cn.CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$name;";
             cmd.Parameters.AddWithValue("$name", table);
             if (Convert.ToInt32(cmd.ExecuteScalar()) != 1)
                 throw new InvalidDataException($"O backup não possui a tabela obrigatória '{table}'.");
+            using var schema = cn.CreateCommand();
+            schema.CommandText = "SELECT name FROM pragma_table_info($table);";
+            schema.Parameters.AddWithValue("$table", table);
+            using var reader = schema.ExecuteReader();
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            while (reader.Read()) found.Add(reader.GetString(0));
+            var missing = columns.Where(c => !found.Contains(c)).ToArray();
+            if (missing.Length > 0)
+                throw new InvalidDataException($"A tabela '{table}' não possui as colunas necessárias: {string.Join(", ", missing)}.");
         }
     }
 

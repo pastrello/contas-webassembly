@@ -18,6 +18,7 @@ public sealed class PeriodReportForm : Form
     private readonly DataGridView _grid = new();
     private readonly Label _summary = new();
     private readonly Button _restore = new();
+    private PdfReportExporter.Options? _reportOptions;
 
     public PeriodReportForm(CaixaApplication app, PeriodReportMode mode)
     {
@@ -138,11 +139,14 @@ public sealed class PeriodReportForm : Form
         var credit = rows.Sum(r => r.Credit); var debit = rows.Sum(r => r.Debit);
         if (_mode == PeriodReportMode.Statement)
         {
-            var finalBalance = rows.Count > 0 ? rows[^1].Balance : 0m;
+            var finalBalance = rows.Count > 0 ? rows[^1].Balance : Money.FromCents(_app.Balances.CalculateBefore(Account.Id, start));
             _summary.Text = $"{rows.Count} registro(s) | Entradas: {credit:C2} | Saídas: {debit:C2} | Movimento: {credit - debit:C2} | Saldo final: {finalBalance:C2}";
         }
         else
             _summary.Text = $"{rows.Count} registro(s) | Entradas: {credit:C2} | Saídas: {debit:C2} | Diferença: {credit - debit:C2}";
+        // Cabeçalho e linhas pertencem à mesma consulta, mesmo se os filtros mudarem depois.
+        _reportOptions = new PdfReportExporter.Options(_app.Settings.Get().CompanyName,
+            Text, Account.ToString(), start, end, ReportDescription(), _summary.Text);
     }
 
     private void ExportCsv()
@@ -156,23 +160,21 @@ public sealed class PeriodReportForm : Form
 
     private void ExportPdf()
     {
-        if (Account is null || _grid.Rows.Count == 0)
+        if (_reportOptions is not { } options || _grid.Rows.Count == 0)
         {
             MessageBox.Show(this, "Não há dados para gerar o PDF.", "Relatório PDF", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        var start = DateOnly.FromDateTime(_start.Value.Date); var end = DateOnly.FromDateTime(_end.Value.Date);
         using var dlg = new SaveFileDialog
         {
             Title = "Salvar relatório em PDF", Filter = "PDF (*.pdf)|*.pdf", DefaultExt = "pdf", AddExtension = true,
-            FileName = $"{SafeFileName(Text)}-{Account.Code}-{start:yyyyMMdd}-{end:yyyyMMdd}.pdf"
+            FileName = $"{SafeFileName(Text)}-{options.StartDate:yyyyMMdd}-{options.EndDate:yyyyMMdd}.pdf"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         try
         {
             Cursor = Cursors.WaitCursor;
-            PdfReportExporter.Export(_grid, dlg.FileName, new PdfReportExporter.Options(
-                _app.Settings.Get().CompanyName, Text, Account.ToString(), start, end, ReportDescription(), _summary.Text));
+            PdfReportExporter.Export(_grid, dlg.FileName, options);
         }
         catch (Exception ex) { UiHelpers.ShowError(this, ex); return; }
         finally { Cursor = Cursors.Default; }

@@ -14,7 +14,7 @@ public sealed class AboutForm : Form
             Location = new Point(25, 25),
             Size = new Size(510, 175),
             Text =
-                "CAIXA MODERNIZADO\r\n\r\n" +
+                $"CAIXA MODERNIZADO — versão {Application.ProductVersion}\r\n\r\n" +
                 "Controle simples de contas financeiras.\r\n\r\n" +
                 "C# / .NET 10 / WinForms / SQLite\r\n" +
                 "Relatórios PDF, backup/restauração e manutenção do banco."

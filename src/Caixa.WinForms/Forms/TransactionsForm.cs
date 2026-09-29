@@ -31,6 +31,12 @@ public partial class TransactionsForm : Form
         chkShowArchived.CheckedChanged += (_, _) => ReloadTransactions();
         Load += (_, _) => LoadCombos();
         FormClosing += (_, e) => { if (!_unsaved.ConfirmClose(this, CaptureState())) e.Cancel = true; };
+        date.ValueChanged += (_, _) => UpdateToggleEnabled();
+        txtDocument.TextChanged += (_, _) => UpdateToggleEnabled();
+        cmbHistory.SelectedIndexChanged += (_, _) => UpdateToggleEnabled();
+        numAmount.ValueChanged += (_, _) => UpdateToggleEnabled();
+        txtDescription.TextChanged += (_, _) => UpdateToggleEnabled();
+        chkCleared.CheckedChanged += (_, _) => UpdateToggleEnabled();
     }
 
     private Account? CurrentAccount => cmbAccount.SelectedItem as Account;
@@ -113,6 +119,7 @@ public partial class TransactionsForm : Form
             txtDescription.Clear();
             chkCleared.Checked = false;
             SetEditorEnabled(true);
+            cmbHistory.DataSource = _app.Histories.GetAll(activeOnly: true);
             if (cmbHistory.Items.Count > 0) cmbHistory.SelectedIndex = 0;
         }
         finally
@@ -135,7 +142,16 @@ public partial class TransactionsForm : Form
         _loaded = tx;
         date.Value = tx.Date.ToDateTime(TimeOnly.MinValue);
         txtDocument.Text = tx.DocumentNumber;
-        cmbHistory.SelectedItem = ((List<HistoryItem>)cmbHistory.DataSource!).FirstOrDefault(h => h.Id == tx.HistoryId);
+        // Mantém o histórico original disponível para editar movimentos antigos,
+        // mesmo quando ele deixou de estar ativo para novos lançamentos.
+        var histories = _app.Histories.GetAll(activeOnly: true);
+        if (histories.All(h => h.Id != tx.HistoryId))
+        {
+            var original = _app.Histories.GetById(tx.HistoryId);
+            if (original is not null) histories.Add(original);
+        }
+        cmbHistory.DataSource = histories;
+        cmbHistory.SelectedItem = histories.FirstOrDefault(h => h.Id == tx.HistoryId);
         numAmount.Value = Math.Min(numAmount.Maximum, Math.Max(numAmount.Minimum, Money.FromCents(tx.AmountCents)));
         txtDescription.Text = tx.Description;
         chkCleared.Checked = tx.IsCleared;
@@ -195,6 +211,12 @@ public partial class TransactionsForm : Form
     private void ToggleCleared()
     {
         if (_loaded is null || _loaded.LegacyRolledIntoOpeningBalance) return;
+        if (_unsaved.IsDirty(CaptureState()))
+        {
+            MessageBox.Show(this, "Salve as alterações do lançamento antes de contabilizar ou desfazer a contabilização.",
+                "Alterações não salvas", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
         try
         {
             _app.Transactions.SetCleared(_loaded.Id, !_loaded.IsCleared);
@@ -212,7 +234,14 @@ public partial class TransactionsForm : Form
             CurrentHistory?.Id ?? 0, numAmount.Value, txtDescription.Text, chkCleared.Checked);
 
     private void UpdateModeTitle()
-        => Text = _loaded is null ? "Lançamentos - NOVO REGISTRO" : $"Lançamentos - EDITANDO #{_loaded.Id}";
+    {
+        Text = _loaded is null ? "Lançamentos - NOVO REGISTRO" : $"Lançamentos - EDITANDO #{_loaded.Id}";
+        UpdateToggleEnabled();
+    }
+
+    private void UpdateToggleEnabled()
+        => btnToggle.Enabled = _loaded is { LegacyRolledIntoOpeningBalance: false }
+            && !_unsaved.IsDirty(CaptureState());
 
     private void SetEditorEnabled(bool enabled)
     {
