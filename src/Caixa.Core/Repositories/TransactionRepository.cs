@@ -161,6 +161,8 @@ public sealed class TransactionRepository
 
     public long Save(CashTransaction item)
     {
+        if (item.LegacyRolledIntoOpeningBalance)
+            throw new InvalidOperationException("Registros incorporados ao saldo inicial são somente leitura.");
         if (item.AccountId <= 0) throw new InvalidOperationException("Selecione uma conta.");
         if (item.HistoryId <= 0) throw new InvalidOperationException("Selecione um histórico.");
         if (item.AmountCents <= 0) throw new InvalidOperationException("O valor deve ser maior que zero.");
@@ -182,8 +184,8 @@ public sealed class TransactionRepository
                 UPDATE transactions SET account_id=$account,date=$date,document_number=$doc,
                     history_id=$history,amount_cents=$amount,is_cleared=$cleared,
                     is_archived=$archived,description=$description,updated_at=CURRENT_TIMESTAMP
-                WHERE id=$id;
-                SELECT $id;
+                WHERE id=$id AND legacy_rolled_into_opening_balance=0
+                RETURNING id;
                 """;
             cmd.Parameters.AddWithValue("$id", item.Id);
         }
@@ -195,7 +197,10 @@ public sealed class TransactionRepository
         cmd.Parameters.AddWithValue("$cleared", item.IsCleared ? 1 : 0);
         cmd.Parameters.AddWithValue("$archived", item.IsArchived ? 1 : 0);
         cmd.Parameters.AddWithValue("$description", item.Description.Trim());
-        item.Id = Convert.ToInt64(cmd.ExecuteScalar());
+        var result = cmd.ExecuteScalar();
+        if (result is null)
+            throw new InvalidOperationException("O lançamento não existe mais ou está protegido por compatibilidade. Atualize a consulta.");
+        item.Id = Convert.ToInt64(result);
         return item.Id;
     }
 
@@ -203,30 +208,31 @@ public sealed class TransactionRepository
     {
         using var cn = _db.OpenConnection();
         using var cmd = cn.CreateCommand();
-        cmd.CommandText = "DELETE FROM transactions WHERE id=$id;";
+        cmd.CommandText = "DELETE FROM transactions WHERE id=$id AND legacy_rolled_into_opening_balance=0;";
         cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
+        EnsureChanged(cmd.ExecuteNonQuery());
     }
 
     public void SetCleared(long id, bool cleared)
     {
         using var cn = _db.OpenConnection();
         using var cmd = cn.CreateCommand();
-        cmd.CommandText = "UPDATE transactions SET is_cleared=$v,updated_at=CURRENT_TIMESTAMP WHERE id=$id;";
+        cmd.CommandText = "UPDATE transactions SET is_cleared=$v,updated_at=CURRENT_TIMESTAMP WHERE id=$id AND legacy_rolled_into_opening_balance=0;";
         cmd.Parameters.AddWithValue("$v", cleared ? 1 : 0);
         cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
+        EnsureChanged(cmd.ExecuteNonQuery());
     }
 
     public int ArchiveCleared(long accountId, DateOnly start, DateOnly end)
     {
+        if (end < start) throw new InvalidOperationException("A data final deve ser igual ou posterior à inicial.");
         using var cn = _db.OpenConnection();
         using var cmd = cn.CreateCommand();
         cmd.CommandText = """
             UPDATE transactions
             SET is_archived=1, updated_at=CURRENT_TIMESTAMP
             WHERE account_id=$account AND date BETWEEN $start AND $end
-              AND is_cleared=1 AND is_archived=0;
+              AND is_cleared=1 AND is_archived=0 AND legacy_rolled_into_opening_balance=0;
             """;
         cmd.Parameters.AddWithValue("$account", accountId);
         cmd.Parameters.AddWithValue("$start", start.ToString("yyyy-MM-dd"));
@@ -238,9 +244,17 @@ public sealed class TransactionRepository
     {
         using var cn = _db.OpenConnection();
         using var cmd = cn.CreateCommand();
-        cmd.CommandText = "UPDATE transactions SET is_archived=0,updated_at=CURRENT_TIMESTAMP WHERE id=$id;";
+        cmd.CommandText = "UPDATE transactions SET is_archived=0,updated_at=CURRENT_TIMESTAMP WHERE id=$id AND legacy_rolled_into_opening_balance=0;";
         cmd.Parameters.AddWithValue("$id", id);
-        return cmd.ExecuteNonQuery();
+        var changed = cmd.ExecuteNonQuery();
+        EnsureChanged(changed);
+        return changed;
+    }
+
+    private static void EnsureChanged(int changed)
+    {
+        if (changed != 1)
+            throw new InvalidOperationException("O lançamento não existe mais ou está protegido por compatibilidade. Atualize a consulta.");
     }
 
     private static List<CashTransaction> ReadList(SqliteCommand cmd)

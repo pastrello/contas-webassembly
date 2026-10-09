@@ -24,4 +24,13 @@ internal sealed class UnsavedChangesGuard
             MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2) == DialogResult.Yes;
     }
+
+    public bool ConfirmDiscard(IWin32Window owner, string currentState)
+    {
+        if (!IsDirty(currentState)) return true;
+        return MessageBox.Show(owner,
+            "Existem alterações não salvas.\r\n\r\nDeseja descartá-las e iniciar um novo lançamento?",
+            "Alterações não salvas", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+    }
 }

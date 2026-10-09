@@ -1,112 +1,32 @@
-# Contas
+# Contas WebAssembly
 
-Aplicação desktop para controle simples de contas financeiras, lançamentos, conciliação e relatórios.
+Projeto independente para estudar Blazor WebAssembly com C# e uma API ASP.NET Core, usando SQLite no servidor.
 
-O projeto é uma reescrita moderna em **C# / .NET 10 / WinForms**, usando **SQLite** como banco local.
+## Origem e separação
 
-## Recursos
+Derivado de [pastrello/contas](https://github.com/pastrello/contas), preservando seu histórico Git. Esta base inclui as correções locais da versão 1.6.2 e a auditoria de lançamentos de 02/10/2026.
 
-- cadastro de contas;
-- cadastro de históricos de entrada e saída;
-- lançamentos financeiros por conta;
-- saldo real e saldo contabilizado/compensado;
-- baixa/arquivamento de lançamentos;
-- extratos e consultas por período;
-- previsão de cheques;
-- relatório por histórico;
-- consulta avançada de lançamentos;
-- exportação de relatórios para PDF e CSV;
-- backup compactado e restauração do SQLite;
-- manutenção do banco (`quick_check`, `integrity_check`, `optimize` e `VACUUM`);
-- prevenção de segunda instância do programa;
-- aviso de alterações não salvas;
-- publicação self-contained para Windows x64.
+É uma cópia independente, não um fork nativo do GitHub. O projeto desktop e suas releases continuam no repositório original. Nenhum banco, backup, instalador ou arquivo pessoal foi copiado. As releases desktop não são republicadas aqui.
 
-## Tecnologia
+## Estado inicial
 
-- .NET 10
-- C#
-- Windows Forms
-- SQLite (`Microsoft.Data.Sqlite`)
-- PDFsharp / MigraDoc
+O código ainda é a aplicação desktop de referência. Não há cliente WebAssembly nem API implementados nesta etapa. Os modelos, serviços financeiros, repositórios e testes serão a base do estudo.
 
-## Estrutura
+Arquitetura planejada:
 
-```text
-Contas/
-├── CaixaModernizado.sln
-├── Directory.Build.props
-├── build.cmd
-├── publish-win-x64.cmd
-├── docs/
-└── src/
-    ├── Caixa.Core/
-    │   ├── Data/
-    │   ├── Models/
-    │   ├── Repositories/
-    │   ├── Services/
-    │   └── Utilities/
-    └── Caixa.WinForms/
-        ├── Forms/
-        └── Utilities/
-```
+- Caixa.Web: interface Blazor WebAssembly executada no navegador.
+- Caixa.Api: endpoints ASP.NET Core no servidor.
+- Caixa.Core: regras financeiras e acesso ao SQLite, usados pela API.
+- SQLite: banco no servidor; sem acesso direto pelo navegador.
 
-## Compilação
+O primeiro exercício será listar contas e saldos por meio de uma API real. A implementação web usará um banco de estudo separado do banco operacional desktop.
 
-Requisitos:
+## Documentação herdada
 
-- Visual Studio 2026 com **Desenvolvimento para desktop com .NET**; ou
-- .NET 10 SDK.
+Os arquivos em docs e os scripts de build/instalador ainda descrevem a versão desktop. Servem de referência histórica e não representam uma versão web pronta. O instalador herdado mantém a identidade do aplicativo desktop: não o distribua como produto WebAssembly.
 
-No Visual Studio, abra:
+- [README original preservado](docs/README-DESKTOP.md)
+- [Arquitetura desktop](docs/01-ARQUITETURA.md)
+- [Auditoria financeira](docs/10-AUDITORIA-LANCAMENTOS.md)
 
-```text
-CaixaModernizado.sln
-```
-
-Defina `Caixa.WinForms` como projeto de inicialização e compile a solução.
-
-Na linha de comando:
-
-```bat
-build.cmd
-```
-
-## Publicação para Windows x64
-
-```bat
-publish-win-x64.cmd
-```
-
-O script gera uma publicação Release self-contained para Windows x64.
-
-## Instalador Windows
-
-Para publicar e gerar o instalador com Inno Setup 6.3 ou superior:
-
-```bat
-build-installer.cmd
-```
-
-O Setup é gerado em `dist/`, inclui o .NET e instala para o usuário atual.
-O mesmo instalador atualiza versões anteriores, preservando o banco e os backups.
-A versão é definida em `Directory.Build.props` e também aparece na tela Sobre.
-Consulte [Instalação e distribuição](docs/09-INSTALADOR.md) para os detalhes e testes.
-
-## Banco de dados
-
-O banco é criado automaticamente em:
-
-```text
-%LOCALAPPDATA%\CaixaModernizado\caixa.db
-```
-
-O arquivo de banco **não deve ser versionado no Git**.
-
-## Backup
-
-A aplicação possui backup e restauração próprios. O backup cria um snapshot consistente do SQLite, valida a base e grava um ZIP com o banco e informações de conferência.
-
-## Observação
-
-Este repositório contém apenas a aplicação moderna. Arquivos DBF, executáveis antigos e ferramentas de conversão não fazem parte deste código-fonte.
+A versão 1.6.2 nos metadados identifica a base desktop, não uma release web.

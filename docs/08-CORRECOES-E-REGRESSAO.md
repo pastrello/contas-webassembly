@@ -46,4 +46,6 @@ As verificações de Forms exercitam controles e métodos sem mostrar janelas. N
 
 ## Melhorias separadas desta etapa
 
+Atualização: a proteção de navegação na tela de lançamentos foi implementada posteriormente na [auditoria de 02/10/2026](10-AUDITORIA-LANCAMENTOS.md).
+
 A confirmação ao clicar em Novo ou trocar de registro continua como melhoria futura: a proteção de descarte existente atua no fechamento. Também permanecem a pequena limpeza de métodos sem uso, a regra de cheques pelo código 51 e os três avisos anteriores de nulabilidade.

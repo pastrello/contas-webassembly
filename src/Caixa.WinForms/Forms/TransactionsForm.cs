@@ -12,10 +12,14 @@ public partial class TransactionsForm : Form
     private CashTransaction? _loaded;
     private bool _suppressGridSelection;
     private readonly UnsavedChangesGuard _unsaved = new();
+    private readonly Func<bool>? _confirmDiscard;
 
-    public TransactionsForm(CaixaApplication app)
+    public TransactionsForm(CaixaApplication app) : this(app, null) { }
+
+    internal TransactionsForm(CaixaApplication app, Func<bool>? confirmDiscard)
     {
         _app = app;
+        _confirmDiscard = confirmDiscard;
         InitializeComponent();
         UiHelpers.ConfigureGrid(grid);
         grid.Columns.Add(UiHelpers.TextColumn("Data", nameof(TxRow.Date), 90));
@@ -27,8 +31,8 @@ public partial class TransactionsForm : Form
         grid.Columns.Add(UiHelpers.CheckColumn("Contab.", nameof(TxRow.Cleared), 70));
         grid.Columns.Add(UiHelpers.CheckColumn("Baixado", nameof(TxRow.Archived), 70));
 
-        cmbAccount.SelectedIndexChanged += (_, _) => { ReloadTransactions(); NewItem(); };
-        chkShowArchived.CheckedChanged += (_, _) => ReloadTransactions();
+        cmbAccount.SelectedIndexChanged += (_, _) => { ReloadTransactions(); ResetEditor(); };
+        chkShowArchived.CheckedChanged += (_, _) => { ReloadTransactions(); ResetEditor(); };
         Load += (_, _) => LoadCombos();
         FormClosing += (_, e) => { if (!_unsaved.ConfirmClose(this, CaptureState())) e.Cancel = true; };
         date.ValueChanged += (_, _) => UpdateToggleEnabled();
@@ -107,6 +111,13 @@ public partial class TransactionsForm : Form
 
     private void NewItem()
     {
+        if (_unsaved.IsDirty(CaptureState()) &&
+            !(_confirmDiscard?.Invoke() ?? _unsaved.ConfirmDiscard(this, CaptureState()))) return;
+        ResetEditor();
+    }
+
+    private void ResetEditor()
+    {
         _suppressGridSelection = true;
         try
         {
@@ -173,14 +184,8 @@ public partial class TransactionsForm : Form
         }
         try
         {
-            var tx = _loaded ?? new CashTransaction();
-            tx.AccountId = account.Id;
-            tx.Date = DateOnly.FromDateTime(date.Value.Date);
-            tx.DocumentNumber = txtDocument.Text;
-            tx.HistoryId = history.Id;
-            tx.AmountCents = Money.ToCents(numAmount.Value);
-            tx.Description = txtDescription.Text;
-            tx.IsCleared = chkCleared.Checked;
+            // Só substitui o retrato carregado depois que a gravação for bem-sucedida.
+            var tx = CaptureTransaction();
             var id = _app.Transactions.Save(tx);
             _loaded = tx;
             ReloadTransactions(id);
@@ -204,7 +209,7 @@ public partial class TransactionsForm : Form
             return;
         }
         if (MessageBox.Show(this, "Excluir este lançamento?", "Confirmação", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        try { _app.Transactions.Delete(_loaded.Id); NewItem(); ReloadTransactions(); }
+        try { _app.Transactions.Delete(_loaded.Id); ResetEditor(); ReloadTransactions(); }
         catch (Exception ex) { UiHelpers.ShowError(this, ex); }
     }
 
@@ -233,15 +238,34 @@ public partial class TransactionsForm : Form
         => string.Join("\u001F", _loaded?.Id ?? 0, CurrentAccount?.Id ?? 0, date.Value.Date, txtDocument.Text,
             CurrentHistory?.Id ?? 0, numAmount.Value, txtDescription.Text, chkCleared.Checked);
 
+    private CashTransaction CaptureTransaction() => new()
+    {
+        Id = _loaded?.Id ?? 0,
+        AccountId = CurrentAccount?.Id ?? 0,
+        HistoryId = CurrentHistory?.Id ?? 0,
+        Date = DateOnly.FromDateTime(date.Value.Date),
+        DocumentNumber = txtDocument.Text,
+        AmountCents = Money.ToCents(numAmount.Value),
+        Description = txtDescription.Text,
+        IsCleared = chkCleared.Checked,
+        IsArchived = _loaded?.IsArchived ?? false,
+        LegacyRolledIntoOpeningBalance = _loaded?.LegacyRolledIntoOpeningBalance ?? false
+    };
+
     private void UpdateModeTitle()
     {
-        Text = _loaded is null ? "Lançamentos - NOVO REGISTRO" : $"Lançamentos - EDITANDO #{_loaded.Id}";
         UpdateToggleEnabled();
     }
 
     private void UpdateToggleEnabled()
-        => btnToggle.Enabled = _loaded is { LegacyRolledIntoOpeningBalance: false }
-            && !_unsaved.IsDirty(CaptureState());
+    {
+        var dirty = _unsaved.IsDirty(CaptureState());
+        Text = (_loaded is null ? "Lançamentos - NOVO REGISTRO" : $"Lançamentos - EDITANDO #{_loaded.Id}")
+            + (dirty ? " - ALTERAÇÕES NÃO SALVAS (Salvar ou Novo)" : "");
+        btnToggle.Enabled = _loaded is { LegacyRolledIntoOpeningBalance: false } && !dirty;
+        // A conta é o contexto da grade. Navegar só após Salvar ou descartar por Novo.
+        grid.Enabled = cmbAccount.Enabled = chkShowArchived.Enabled = !dirty;
+    }
 
     private void SetEditorEnabled(bool enabled)
     {

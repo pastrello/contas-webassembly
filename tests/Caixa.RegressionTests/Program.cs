@@ -9,7 +9,7 @@ using Microsoft.Data.Sqlite;
 
 // Executável de regressão sem dependências adicionais e sem abrir janelas.
 // Todos os bancos e backups ficam sob o diretório informado na linha de comando.
-internal static class Program
+internal static partial class Program
 {
     private static int _checks;
 
@@ -22,6 +22,7 @@ internal static class Program
         try
         {
             Run(root);
+            AuditTransactions(root);
             Console.WriteLine($"PASS: {_checks} verificações. Dados descartáveis: {root}");
             return 0;
         }
