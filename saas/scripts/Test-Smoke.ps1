@@ -10,6 +10,9 @@ $apiProcess = $null
 $oldDatabase = $env:DATABASE_URL
 $oldBind = $env:APP_BIND
 $oldWeb = $env:WEB_DIR
+$oldMigration = $env:MIGRATION_DATABASE_URL
+$oldOrigin = $env:PUBLIC_ORIGIN
+$oldAppEnv = $env:APP_ENV
 function Get-FreePort {
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
     $listener.Start()
@@ -35,6 +38,15 @@ try {
     Start-ProjectPostgres -PostgresBin $PostgresBin -Data $data -Log "$testRoot\postgres.log" -Port $dbPort
     $databaseStarted = $true
     $env:DATABASE_URL = "postgres://contas@127.0.0.1:$dbPort/postgres"
+    $env:MIGRATION_DATABASE_URL = $env:DATABASE_URL
+    Push-Location $saasRoot
+    try { & .\target\debug\contas-api.exe --migrate; if($LASTEXITCODE -ne 0){throw 'Migracoes falharam'} } finally {Pop-Location}
+    "ALTER ROLE contas_app LOGIN;" | & "$PostgresBin\psql.exe" -h 127.0.0.1 -p $dbPort -U contas -d postgres -v ON_ERROR_STOP=1 | Out-Null
+    if($LASTEXITCODE -ne 0){throw 'Role de teste falhou'}
+    $env:MIGRATION_DATABASE_URL = $null
+    $env:DATABASE_URL = "postgres://contas_app@127.0.0.1:$dbPort/postgres"
+    $env:APP_ENV = 'development'
+    $env:PUBLIC_ORIGIN = "http://127.0.0.1:$apiPort"
     $env:APP_BIND = "127.0.0.1:$apiPort"
     $env:WEB_DIR = Join-Path $saasRoot 'web'
     $apiProcess = Start-Process "$saasRoot\target\debug\contas-api.exe" -WindowStyle Hidden -PassThru -RedirectStandardOutput "$testRoot\api.log" -RedirectStandardError "$testRoot\api-error.log"
@@ -68,4 +80,7 @@ try {
     $env:DATABASE_URL = $oldDatabase
     $env:APP_BIND = $oldBind
     $env:WEB_DIR = $oldWeb
+    $env:MIGRATION_DATABASE_URL = $oldMigration
+    $env:PUBLIC_ORIGIN = $oldOrigin
+    $env:APP_ENV = $oldAppEnv
 }

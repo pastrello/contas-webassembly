@@ -1,72 +1,68 @@
-# Contas SaaS — ciclo 1
+# Contas SaaS — ciclo 2
 
-Protótipo separado do desktop C#/SQLite. Rust compila o serviço nativo e o cliente WebAssembly; PostgreSQL armazena os futuros dados do SaaS. Nenhum banco desktop é lido ou migrado.
+Rust + WebAssembly + PostgreSQL. Projeto de estudo separado do desktop C#/SQLite. Código em `crates/api`, `crates/web`, `crates/contracts`; migrações versionadas em `migrations`.
 
-## Escopo entregue
+## Funcionalidades
 
-- Workspace Rust com API Axum, cliente WebAssembly e contrato JSON compartilhado.
-- Interface em português: o módulo Rust/WASM consulta a API pela mesma origem.
-- Conexão PostgreSQL via SQLx/pool. `SELECT 1` verifica o banco de verdade.
-- `GET /health/live`: 204 enquanto o processo responde.
-- `GET /health/ready`: 204 com banco disponível, 503 se indisponível.
-- `GET /api/status`: estado público sem credenciais nem dados de clientes.
-- Scripts de build, execução local e teste com PostgreSQL descartável.
-- Docker Compose de desenvolvimento como alternativa ao PostgreSQL instalado.
+- Criar um cliente/empresa com seu usuário administrador.
+- Entrar com e-mail e senha, recarregar a página mantendo a sessão e sair revogando a sessão no servidor.
+- Administrador altera o nome do ambiente e cadastra novos usuários de consulta.
+- Usuário de consulta acessa o mesmo ambiente, sem alterar configurações ou cadastrar usuários.
+- Cada cadastro de cliente tem dados independentes. O cliente ativo vem da sessão validada no servidor; o navegador não escolhe um `tenant_id` para autorizar uma operação.
 
-Este ciclo não oferece login, cadastro de clientes ou operações financeiras. Não publicar na internet como produto pronto. Tabelas, migrações, usuário de aplicação com privilégios mínimos e isolamento entre clientes serão implementados juntos no ciclo 2.
+Ainda não há contas, históricos ou lançamentos web. Eles virão nos ciclos 3 e 4. Cadastro público é configurável; nesta fase não há confirmação de e-mail, recuperação/troca de senha, convites ou remoção de usuários pela interface. Usar apenas dados de estudo. A política de recuperação de contas e a preparação operacional antecederão a publicação para clientes reais.
 
-## Windows: executar nesta máquina
+## Executar no Windows
 
-Na pasta `saas`, em PowerShell:
+Na pasta `saas`:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start-Dev.ps1
 ```
 
-Abra http://127.0.0.1:8080. O script usa PostgreSQL 15 já instalado (binários apenas), cria um cluster próprio em `.dev/postgres`, gera uma senha local aleatória e escuta somente em `127.0.0.1:55432`. Cria o banco `contas_saas` nesse cluster. Não usa o serviço PostgreSQL existente nem sua base. Ctrl+C encerra a API e o banco iniciado pelo script. Para outro caminho, informe `-PostgresBin`.
+Abra **http://127.0.0.1:8080/** (o endereço deve corresponder a PUBLIC_ORIGIN). O script usa somente os binários PostgreSQL instalados, cria seu próprio cluster em `.dev/postgres`, aplica migrações e configura uma conta `contas_app` restrita. Senhas locais aleatórias ficam em arquivos ignorados em `.dev`. Não acessa o serviço/banco PostgreSQL existente ou qualquer SQLite desktop. Ctrl+C encerra o ambiente iniciado pelo script. Passe `-PostgresBin` se os binários estiverem em outro local.
 
-O compilador instalado durante este ciclo fica em `.dev`, sem alteração global do PATH. Os scripts o reconhecem automaticamente. Em outra máquina, instale Rust/MSVC pelos [passos oficiais](https://rust-lang.org/tools/install/) e execute:
+O compilador Rust e o SDK complementar desta máquina estão em `.dev`, sem alterar PATH global. Em outra máquina, instale [Rust e ferramentas C++ oficiais](https://rust-lang.org/tools/install/), execute `rustup target add wasm32-unknown-unknown` e `cargo install wasm-bindgen-cli --version 0.2.105 --locked`. Versão Rust fixada em `rust-toolchain.toml`; dependências fixadas em Cargo.lock.
 
-```powershell
-rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.105 --locked
-```
+## Segurança e isolamento implementados
 
-`rust-toolchain.toml` fixa Rust 1.90.0; Cargo.lock fixa as dependências. A versão da CLI wasm-bindgen deve corresponder à biblioteca (0.2.105). O cliente usa Rust/web-sys para consultar a API; JavaScript apenas carrega o módulo. Ainda não adotamos framework de interface.
+- Senhas com Argon2id e salt aleatório; cálculo fora das tarefas assíncronas, com concorrência limitada.
+- Sessão opaca de 256 bits; banco armazena apenas SHA-256 do token. Validade fixa de 12 horas. Login troca o token presente, logout o remove; usuário desativado e vínculo removido deixam de autorizar acessos.
+- Cookie HttpOnly e SameSite=Strict. Secure habilitado por padrão. Somente APP_ENV=development permite cookie sem Secure para testes HTTP locais.
+- Escritas exigem Origin igual a PUBLIC_ORIGIN e cabeçalho X-Contas-Request. Sem CORS aberto. Respostas não são armazenadas em cache; CSP limita recursos à própria origem.
+- Limitação de tentativas compartilhada no PostgreSQL: 10 logins por e-mail/15 minutos, teto global de 500; 100 cadastros globais e 30 novos usuários por cliente/15 minutos. Conta tentativas bem-sucedidas também. É uma proteção inicial, não substitui controles de tráfego de produção.
+- RLS obrigatório em tenants, memberships e tenant_settings. Contexto definido com `set_config(..., true)` em transação, sem vazar ao próximo uso da conexão. Chaves compostas impedem referências entre clientes.
+- A API verifica na inicialização que seu papel não é proprietário das tabelas, superusuário, BYPASSRLS, administrador de papéis/bancos ou membro de outro papel. Ela não executa migrações automaticamente.
 
-## Docker (alternativa)
+Tabelas globais de identidade/sessões são acessadas somente pela API, por consultas parametrizadas. RLS protege dados por cliente; não é uma defesa contra comprometimento da credencial do serviço ou do administrador PostgreSQL. A autorização owner/viewer é aplicada na API. Inicialmente, cada usuário cadastrado pertence a um ambiente; o esquema permite evoluir para vários vínculos, mas não há seletor de ambientes nesta etapa.
 
-Com Docker Desktop em modo Linux iniciado:
+## Migrações e Linux/Docker
+
+O binário `contas-api --migrate` usa **MIGRATION_DATABASE_URL**, uma conexão administrativa separada. Por padrão cria o papel contas_app sem login. Se APP_DATABASE_PASSWORD for fornecida ao processo de migração (mínimo 16 caracteres), configura seu login com essa senha. O processo normal usa somente **DATABASE_URL** da conta restrita; nunca fornecer credenciais administrativas ao serviço web.
+
+No Linux, o binário trata SIGTERM para encerramento. Docker Compose faz a sequência banco saudável → migração concluída → API. Na pasta `saas`, com Docker Linux ativo:
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build -d
-docker compose logs -f app
 ```
 
-Abra http://127.0.0.1:8080. Use `docker compose down` para parar, preservando o volume. Não execute simultaneamente com Start-Dev, pois ambos usam as mesmas portas. A senha do exemplo é exclusiva de desenvolvimento; se a alterar, mantenha somente letras/números para a URL desse exemplo. Alterar a variável não troca a senha de um volume PostgreSQL já inicializado.
+Se já existe um `.env` do ciclo 1, adicione APP_DATABASE_PASSWORD. Exemplos são exclusivamente locais. Para este Compose, use senhas alfanuméricas/underscore, ou codifique caracteres especiais na URL. Mudar POSTGRES_PASSWORD não altera automaticamente a senha de um volume existente. Não iniciar Compose junto com Start-Dev: compartilham portas. `docker compose down` preserva o volume.
 
-O Compose usa PostgreSQL 17; a validação nativa nesta máquina usa PostgreSQL 15. A construção e execução Docker dependem de daemon ativo e devem ser verificadas separadamente.
+Compose é de desenvolvimento: portas publicadas apenas no loopback, APP_ENV=development, cadastro aberto. Para produção definir PUBLIC_ORIGIN com HTTPS, remover APP_ENV=development, decidir ALLOW_REGISTRATION e configurar proxy, TLS, backup/restauração, monitoração e controles adicionais. A execução Linux/Docker completa ainda precisa ser validada; testes locais usam PostgreSQL 15 e o Compose prevê 17.
 
-## Verificar
+## Testes
 
 ```powershell
 . ./scripts/Use-Rust.ps1
-cargo fmt --all -- --check
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo clippy --locked -p contas-web --target wasm32-unknown-unknown -- -D warnings
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-Cycle2.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-Smoke.ps1
 ```
 
-O smoke test cria banco descartável e portas próprias, inicia a API, verifica disponibilidade e arquivos WASM, derruba o banco e confirma 503 mantendo liveness 204. Encerra seus processos mesmo em falha. Logs e cluster ficam em `.dev/smoke-*` para diagnóstico, fora do Git. Nunca usa bancos operacionais.
+Test-Cycle2 cria cluster descartável, aplica migrações duas vezes (idempotência), usa pool com **uma conexão** para forçar reutilização e testa autenticação, permissões, RLS direto, tentativas entre clientes, chaves compostas, sessão e limitação compartilhada. O teste fica `ignored` no cargo test comum para nunca escolher um banco operacional por engano. O script configura explicitamente as URLs temporárias.
 
-## Próximo ciclo
-
-1. Usuários, clientes (tenants) e vínculos com permissões.
-2. Login e sessão; resolução do cliente autorizada no servidor.
-3. Migrações PostgreSQL, chaves com tenant_id e Row-Level Security.
-4. Testes negativos entre dois clientes, inclusive usando conexões reutilizadas do pool.
-
-Depois: contas/históricos, lançamentos, relatórios e implantação. Manter valores em centavos inteiros. Independência dos clientes será lógica, compartilhando infraestrutura; nenhuma promessa de isolamento existe antes dos testes do ciclo 2.
+Test-Smoke verifica o processo HTTP real, arquivos WASM, disponibilidade e queda do banco. Ambos param seus processos e deixam logs em `.dev`, fora do Git.

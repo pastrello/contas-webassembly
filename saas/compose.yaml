@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_USER: contas
       POSTGRES_DB: contas_saas
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}
     ports:
       - "127.0.0.1:55432:5432"
     volumes:
@@ -16,17 +16,32 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+  migrate:
+    build: .
+    image: contas-saas-dev:local
+    command: ["/app/contas-api", "--migrate"]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://contas:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}@db:5432/contas_saas
+      APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:?Defina APP_DATABASE_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
   app:
     build: .
+    image: contas-saas-dev:local
     environment:
-      DATABASE_URL: postgres://contas:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD}@db:5432/contas_saas
+      DATABASE_URL: postgres://contas_app:${APP_DATABASE_PASSWORD:?Defina APP_DATABASE_PASSWORD}@db:5432/contas_saas
       APP_BIND: 0.0.0.0:8080
+      PUBLIC_ORIGIN: http://127.0.0.1:8080
+      APP_ENV: development
+      ALLOW_REGISTRATION: "true"
       WEB_DIR: /app/web
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 volumes:
   postgres_data:

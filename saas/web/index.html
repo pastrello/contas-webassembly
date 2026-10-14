@@ -1,31 +1,33 @@
 <!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Contas · SaaS</title>
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-  <main>
-    <p class="eyebrow">CONTAS / AMBIENTE DE ESTUDO</p>
-    <h1>Um novo espaço para suas contas.</h1>
-    <p class="intro">A primeira etapa do Contas SaaS está em construção. Este ambiente é separado do aplicativo desktop.</p>
-    <section aria-labelledby="status-title">
-      <h2 id="status-title">Conexão do ambiente</h2>
-      <div aria-live="polite">
-        <p id="overall-status">Verificando conexão…</p>
-        <dl>
-          <dt>Navegador</dt><dd id="wasm-status">Carregando WebAssembly…</dd>
-          <dt>Serviço</dt><dd id="api-status">Aguardando resposta…</dd>
-          <dt>Banco de dados</dt><dd id="database-status">Aguardando resposta…</dd>
-        </dl>
-      </div>
-      <a class="button" href="/">Verificar novamente</a>
-    </section>
-    <p class="note">Ciclo 1 de desenvolvimento. Login, ambientes de clientes e lançamentos serão adicionados nas próximas etapas.</p>
-    <noscript>Ative JavaScript para carregar o aplicativo WebAssembly.</noscript>
-  </main>
-  <script type="module" src="/bootstrap.js"></script>
-</body>
-</html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Contas · SaaS</title><link rel="stylesheet" href="/style.css"></head>
+<body><main>
+<p class="eyebrow">CONTAS / AMBIENTE DE ESTUDO</p>
+<h1>Suas contas, no seu espaço.</h1>
+<p id="status" role="status">Carregando seu ambiente…</p>
+<p id="message" role="alert"></p>
+<div id="auth" hidden class="columns">
+<section><h2>Entrar</h2><form id="login-form">
+<label for="login-email">E-mail</label><input id="login-email" type="email" autocomplete="username" maxlength="254" required>
+<label for="login-password">Senha</label><input id="login-password" type="password" autocomplete="current-password" maxlength="128" required>
+<button type="submit">Entrar</button></form></section>
+<section><h2>Criar um ambiente</h2><p class="note">Cada cadastro cria um espaço independente para seu cliente ou empresa.</p><form id="register-form">
+<label for="register-tenant">Nome do cliente ou empresa</label><input id="register-tenant" maxlength="100" autocomplete="organization" required>
+<label for="register-name">Seu nome</label><input id="register-name" maxlength="100" autocomplete="name" required>
+<label for="register-email">E-mail</label><input id="register-email" type="email" maxlength="254" autocomplete="username" required>
+<label for="register-password">Senha (12 a 128 caracteres)</label><input id="register-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+<button type="submit">Criar meu ambiente</button></form></section>
+</div>
+<div id="workspace" hidden>
+<section><p class="eyebrow">SEU AMBIENTE</p><h2 id="tenant-name"></h2><p><span id="user-name"></span> · <span id="role"></span></p><span id="tenant-id" hidden></span><p class="note">Contas, históricos e lançamentos serão adicionados nos próximos ciclos.</p><form id="logout-form"><button class="secondary" type="submit">Sair</button></form></section>
+<div id="owner-controls" class="columns" hidden>
+<section><h2>Nome do ambiente</h2><form id="rename-form"><label for="rename-name">Nome</label><input id="rename-name" maxlength="100" required><button type="submit">Salvar nome</button></form></section>
+<section><h2>Adicionar usuário de consulta</h2><p class="note">Este usuário acessará somente este ambiente e não poderá alterar suas configurações.</p><form id="member-form">
+<label for="member-name">Nome</label><input id="member-name" maxlength="100" autocomplete="off" required>
+<label for="member-email">E-mail</label><input id="member-email" type="email" maxlength="254" autocomplete="off" required>
+<label for="member-password">Senha (12 a 128 caracteres)</label><input id="member-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+<button type="submit">Adicionar usuário</button></form></section>
+</div></div>
+<p class="note">Ciclo 2 · Protótipo de estudo. Use dados de teste. O aplicativo desktop continua separado.</p>
+<noscript>Ative JavaScript para carregar o aplicativo WebAssembly.</noscript>
+</main><script type="module" src="/bootstrap.js"></script></body></html>

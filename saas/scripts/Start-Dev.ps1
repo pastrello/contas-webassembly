@@ -8,6 +8,10 @@ $oldDatabase = $env:DATABASE_URL
 $oldBind = $env:APP_BIND
 $oldWeb = $env:WEB_DIR
 $oldPassword = $env:PGPASSWORD
+$oldMigration = $env:MIGRATION_DATABASE_URL
+$oldOrigin = $env:PUBLIC_ORIGIN
+$oldAppEnv = $env:APP_ENV
+$oldRegistration = $env:ALLOW_REGISTRATION
 try {
     if (-not (Test-Path "$PostgresBin\pg_ctl.exe")) { throw 'Informe -PostgresBin ou use Docker Compose conforme o README.' }
     if (-not (Test-Path 'target\debug\contas-api.exe') -or -not (Test-Path 'web\pkg\contas_web_bg.wasm')) {
@@ -36,8 +40,21 @@ try {
         & "$PostgresBin\createdb.exe" -h 127.0.0.1 -p 55432 -U contas contas_saas
         if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar contas_saas' }
     }
-    $env:PGPASSWORD = $oldPassword
-    $env:DATABASE_URL = "postgres://contas:${password}@127.0.0.1:55432/contas_saas"
+    $env:MIGRATION_DATABASE_URL = "postgres://contas:${password}@127.0.0.1:55432/contas_saas"
+    & .\target\debug\contas-api.exe --migrate
+    if ($LASTEXITCODE -ne 0) { throw 'Migracoes falharam' }
+    $appPasswordFile = Join-Path $saasRoot '.dev\app-password.txt'
+    if (-not (Test-Path $appPasswordFile)) { [IO.File]::WriteAllText($appPasswordFile,[Guid]::NewGuid().ToString('N')) }
+    $appPassword = [IO.File]::ReadAllText($appPasswordFile).Trim()
+    if ($appPassword -notmatch '^[a-f0-9]{32}$') { throw 'Senha local inesperada' }
+    "ALTER ROLE contas_app LOGIN PASSWORD '$appPassword';" | & "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) { throw 'Configuracao da conta restrita falhou' }
+    $env:PGPASSWORD = $null
+    $env:MIGRATION_DATABASE_URL = $null
+    $env:DATABASE_URL = "postgres://contas_app:${appPassword}@127.0.0.1:55432/contas_saas"
+    $env:PUBLIC_ORIGIN = 'http://127.0.0.1:8080'
+    $env:APP_ENV = 'development'
+    $env:ALLOW_REGISTRATION = 'true'
     $env:APP_BIND = '127.0.0.1:8080'
     $env:WEB_DIR = Join-Path $saasRoot 'web'
     Write-Host 'Abra http://127.0.0.1:8080 - Ctrl+C encerra o ambiente iniciado por este script.'
@@ -49,5 +66,9 @@ try {
     $env:APP_BIND = $oldBind
     $env:WEB_DIR = $oldWeb
     $env:PGPASSWORD = $oldPassword
+    $env:MIGRATION_DATABASE_URL = $oldMigration
+    $env:PUBLIC_ORIGIN = $oldOrigin
+    $env:APP_ENV = $oldAppEnv
+    $env:ALLOW_REGISTRATION = $oldRegistration
     Pop-Location
 }
