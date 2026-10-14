@@ -77,7 +77,7 @@ fn cookie(state: &AppState, token: &str, max_age: u32) -> HeaderValue {
     ))
     .expect("generated cookie")
 }
-fn write_allowed(state: &AppState, headers: &HeaderMap) -> Result<()> {
+pub(crate) fn write_allowed(state: &AppState, headers: &HeaderMap) -> Result<()> {
     if headers.get("origin").and_then(|h| h.to_str().ok()) != Some(state.config.origin.as_str())
         || headers
             .get("x-contas-request")
@@ -188,6 +188,7 @@ async fn issue_session(
 pub struct Register {
     pub email: String,
     pub password: String,
+    pub password_confirmation: String,
     pub name: String,
     pub tenant_name: String,
 }
@@ -201,6 +202,7 @@ pub async fn register(
         return Err(forbidden());
     }
     rate_limit(&state, "register:global".into(), 100).await?;
+    confirm_password(&input.password, &input.password_confirmation)?;
     let email = email(&input.email)?;
     let user_name = name(&input.name)?;
     let tenant_name = name(&input.tenant_name)?;
@@ -427,6 +429,7 @@ pub struct Member {
     pub email: String,
     pub name: String,
     pub password: String,
+    pub password_confirmation: String,
 }
 pub async fn add_member(
     State(state): State<AppState>,
@@ -442,6 +445,7 @@ pub async fn add_member(
     let email = email(&input.email)?;
     let name = name(&input.name)?;
     rate_limit(&state, format!("member:{}", identity.tenant), 30).await?;
+    confirm_password(&input.password, &input.password_confirmation)?;
     let hash = password_hash(&state, input.password).await?;
     // Revalidate permission after hashing, which runs outside the transaction.
     let (mut tx, identity) = authorized(&state, &headers).await?;
@@ -457,4 +461,14 @@ pub async fn add_member(
         .await?;
     tx.commit().await?;
     Ok(StatusCode::CREATED)
+}
+
+fn confirm_password(password: &str, confirmation: &str) -> Result<()> {
+    if password != confirmation {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "A confirmação de senha não confere.",
+        ));
+    }
+    Ok(())
 }

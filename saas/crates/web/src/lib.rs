@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 use std::cell::Cell;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
+mod catalogs;
 thread_local! { static BUSY:Cell<bool>=const {Cell::new(false)}; }
 fn document() -> web_sys::Document {
     web_sys::window().unwrap().document().unwrap()
@@ -29,7 +30,9 @@ fn input(id: &str) -> String {
 }
 fn busy(value: bool) {
     BUSY.with(|b| b.set(value));
-    let buttons = document().query_selector_all("button").unwrap();
+    let buttons = document()
+        .query_selector_all("button,input,select")
+        .unwrap();
     for i in 0..buttons.length() {
         if let Some(node) = buttons.item(i) {
             if let Ok(button) = node.dyn_into::<web_sys::Element>() {
@@ -100,9 +103,13 @@ async fn refresh() -> Result<(), String> {
         "status",
         "Sessão ativa. Você está no ambiente indicado abaixo.",
     );
+    if let Err(message) = catalogs::load(owner).await {
+        show("message", &message);
+    }
     Ok(())
 }
 fn logged_out() {
+    catalogs::clear();
     visible("auth", true);
     visible("workspace", false);
     show("tenant-id", "");
@@ -122,7 +129,10 @@ async fn submit(action: &str) -> Result<(), String> {
             refresh().await?;
         }
         "register" => {
-            request("POST","/api/auth/register",Some(json!({"email":input("register-email"),"password":input("register-password"),"name":input("register-name"),"tenant_name":input("register-tenant")}))).await?;
+            if input("register-password") != input("register-confirm") {
+                return Err("A confirmação de senha não confere.".into());
+            }
+            request("POST","/api/auth/register",Some(json!({"email":input("register-email"),"password":input("register-password"),"password_confirmation":input("register-confirm"),"name":input("register-name"),"tenant_name":input("register-tenant")}))).await?;
             refresh().await?;
         }
         "rename" => {
@@ -136,7 +146,10 @@ async fn submit(action: &str) -> Result<(), String> {
             refresh().await?;
         }
         "member" => {
-            request("POST","/api/members",Some(json!({"email":input("member-email"),"password":input("member-password"),"name":input("member-name")}))).await?;
+            if input("member-password") != input("member-confirm") {
+                return Err("A confirmação de senha não confere.".into());
+            }
+            request("POST","/api/members",Some(json!({"email":input("member-email"),"password":input("member-password"),"password_confirmation":input("member-confirm"),"name":input("member-name")}))).await?;
             show("message", "Usuário de consulta criado neste ambiente.");
         }
         "logout" => {
@@ -149,6 +162,7 @@ async fn submit(action: &str) -> Result<(), String> {
 }
 #[wasm_bindgen(start)]
 pub fn start() {
+    catalogs::init();
     for action in ["login", "register", "rename", "member", "logout"] {
         let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
             event.prevent_default();

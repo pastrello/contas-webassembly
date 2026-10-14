@@ -1,4 +1,4 @@
-# Contas SaaS — ciclo 2
+# Contas SaaS — ciclo 3
 
 Rust + WebAssembly + PostgreSQL. Projeto de estudo separado do desktop C#/SQLite. Código em `crates/api`, `crates/web`, `crates/contracts`; migrações versionadas em `migrations`.
 
@@ -10,7 +10,7 @@ Rust + WebAssembly + PostgreSQL. Projeto de estudo separado do desktop C#/SQLite
 - Usuário de consulta acessa o mesmo ambiente, sem alterar configurações ou cadastrar usuários.
 - Cada cadastro de cliente tem dados independentes. O cliente ativo vem da sessão validada no servidor; o navegador não escolhe um `tenant_id` para autorizar uma operação.
 
-Ainda não há contas, históricos ou lançamentos web. Eles virão nos ciclos 3 e 4. Cadastro público é configurável; nesta fase não há confirmação de e-mail, recuperação/troca de senha, convites ou remoção de usuários pela interface. Usar apenas dados de estudo. A política de recuperação de contas e a preparação operacional antecederão a publicação para clientes reais.
+Contas, históricos e saldos iniciais estão disponíveis. Lançamentos financeiros ficam para o ciclo 4. Cadastro público é configurável; nesta fase não há confirmação de e-mail, recuperação/troca de senha, convites ou remoção de usuários pela interface. Usar apenas dados de estudo. A política de recuperação de contas e a preparação operacional antecederão a publicação para clientes reais.
 
 ## Executar no Windows
 
@@ -32,7 +32,7 @@ O compilador Rust e o SDK complementar desta máquina estão em `.dev`, sem alte
 - Cookie HttpOnly e SameSite=Strict. Secure habilitado por padrão. Somente APP_ENV=development permite cookie sem Secure para testes HTTP locais.
 - Escritas exigem Origin igual a PUBLIC_ORIGIN e cabeçalho X-Contas-Request. Sem CORS aberto. Respostas não são armazenadas em cache; CSP limita recursos à própria origem.
 - Limitação de tentativas compartilhada no PostgreSQL: 10 logins por e-mail/15 minutos, teto global de 500; 100 cadastros globais e 30 novos usuários por cliente/15 minutos. Conta tentativas bem-sucedidas também. É uma proteção inicial, não substitui controles de tráfego de produção.
-- RLS obrigatório em tenants, memberships e tenant_settings. Contexto definido com `set_config(..., true)` em transação, sem vazar ao próximo uso da conexão. Chaves compostas impedem referências entre clientes.
+- RLS obrigatório em tenants, memberships, tenant_settings, accounts e histories. Contexto definido com `set_config(..., true)` em transação, sem vazar ao próximo uso da conexão. Chaves compostas impedem referências entre clientes.
 - A API verifica na inicialização que seu papel não é proprietário das tabelas, superusuário, BYPASSRLS, administrador de papéis/bancos ou membro de outro papel. Ela não executa migrações automaticamente.
 
 Tabelas globais de identidade/sessões são acessadas somente pela API, por consultas parametrizadas. RLS protege dados por cliente; não é uma defesa contra comprometimento da credencial do serviço ou do administrador PostgreSQL. A autorização owner/viewer é aplicada na API. Inicialmente, cada usuário cadastrado pertence a um ambiente; o esquema permite evoluir para vários vínculos, mas não há seletor de ambientes nesta etapa.
@@ -66,3 +66,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-Smoke.ps1
 Test-Cycle2 cria cluster descartável, aplica migrações duas vezes (idempotência), usa pool com **uma conexão** para forçar reutilização e testa autenticação, permissões, RLS direto, tentativas entre clientes, chaves compostas, sessão e limitação compartilhada. O teste fica `ignored` no cargo test comum para nunca escolher um banco operacional por engano. O script configura explicitamente as URLs temporárias.
 
 Test-Smoke verifica o processo HTTP real, arquivos WASM, disponibilidade e queda do banco. Ambos param seus processos e deixam logs em `.dev`, fora do Git.
+
+## Cadastros do ciclo 3
+
+- Cadastro de ambiente e de usuário exige confirmação de senha na interface e na API. Login e usuários existentes são preservados.
+- Contas: código, número opcional, nome/banco, saldo inicial e situação ativa/inativa.
+- Históricos: código, descrição, sentido explícito Entrada (+1) ou Saída (-1), e situação.
+- Administrador cria, edita, desativa e reativa. Usuários de consulta somente visualizam. Códigos são exclusivos por ambiente, inclusive inativos; normalizados em maiúsculas, com zero à esquerda quando têm um caractere.
+- Valores são enviados como texto decimal e persistidos em centavos inteiros. Aceitam sinal negativo, vírgula ou ponto decimal, sem separador de milhar, com até duas casas e limite de ±90.000.000.000,00 por conta. A soma usa inteiro de 128 bits e inclui somente contas ativas; não representa saldo de movimentações.
+- Edição exige a versão lida: uma alteração concorrente retorna 409. Descarte a edição e atualize a lista antes de tentar novamente. Não há exclusão física pela API.
+- Start-Dev cria backup PostgreSQL em .dev/backups antes de migrar e compara usuários, ambientes e vínculos antes/depois. O backup permanece somente nesta máquina; não é uma rotina de backup de produção.
+- Test-Cycle2 mantém seu nome para compatibilidade e agora cobre também o ciclo 3: confirmação de senha, valores exatos, cadastros, concorrência, permissões e isolamento das novas tabelas.
+
+A próxima etapa adicionará lançamentos e suas regras transacionais. Antes disso, alterações de sentido e saldo inicial não precisam conciliar movimentações, pois elas ainda não existem neste módulo.

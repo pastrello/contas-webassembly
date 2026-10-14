@@ -41,8 +41,27 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar contas_saas' }
     }
     $env:MIGRATION_DATABASE_URL = "postgres://contas:${password}@127.0.0.1:55432/contas_saas"
+    # Preserve all existing data before applying pending schema changes.
+    $backupDir=Join-Path $saasRoot '.dev\backups'
+    New-Item -ItemType Directory -Force $backupDir | Out-Null
+    $backupFile=Join-Path $backupDir ('before-migrate-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[Guid]::NewGuid().ToString('N')+'.dump')
+    & "$PostgresBin\pg_dump.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -Fc -f $backupFile
+    if ($LASTEXITCODE -ne 0) {throw 'Backup falhou; migracoes nao serao aplicadas'}
+    $hasUsers=& "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -tAc "SELECT to_regclass('public.users') IS NOT NULL"
+    if ($LASTEXITCODE -ne 0) {throw 'Verificacao pre-migracao falhou'}
+    $identitySnapshot="SELECT md5(coalesce((SELECT string_agg(row_to_json(u)::text,'' ORDER BY id) FROM users u),'') || coalesce((SELECT string_agg(row_to_json(t)::text,'' ORDER BY id) FROM tenants t),'') || coalesce((SELECT string_agg(row_to_json(m)::text,'' ORDER BY tenant_id,user_id) FROM memberships m),''))"
+    if ($hasUsers -eq 't') {
+        $identityBefore=& "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -tAc $identitySnapshot
+        if ($LASTEXITCODE -ne 0) {throw 'Snapshot pre-migracao falhou'}
+    }
     & .\target\debug\contas-api.exe --migrate
     if ($LASTEXITCODE -ne 0) { throw 'Migracoes falharam' }
+    if ($hasUsers -eq 't') {
+        $identityAfter=& "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -tAc $identitySnapshot
+        if ($LASTEXITCODE -ne 0 -or $identityBefore -ne $identityAfter) {throw 'Identidades divergiram apos migracao; confira o backup antes de continuar'}
+        Write-Host 'Usuarios, clientes e vinculos existentes preservados.'
+    }
+    Write-Host "Backup pre-migracao: $backupFile"
     $appPasswordFile = Join-Path $saasRoot '.dev\app-password.txt'
     if (-not (Test-Path $appPasswordFile)) { [IO.File]::WriteAllText($appPasswordFile,[Guid]::NewGuid().ToString('N')) }
     $appPassword = [IO.File]::ReadAllText($appPasswordFile).Trim()

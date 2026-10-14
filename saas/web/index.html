@@ -16,18 +16,40 @@
 <label for="register-name">Seu nome</label><input id="register-name" maxlength="100" autocomplete="name" required>
 <label for="register-email">E-mail</label><input id="register-email" type="email" maxlength="254" autocomplete="username" required>
 <label for="register-password">Senha (12 a 128 caracteres)</label><input id="register-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
-<button type="submit">Criar meu ambiente</button></form></section>
+<label for="register-confirm">Confirme a senha</label><input id="register-confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required><button type="submit">Criar meu ambiente</button></form></section>
 </div>
 <div id="workspace" hidden>
-<section><p class="eyebrow">SEU AMBIENTE</p><h2 id="tenant-name"></h2><p><span id="user-name"></span> · <span id="role"></span></p><span id="tenant-id" hidden></span><p class="note">Contas, históricos e lançamentos serão adicionados nos próximos ciclos.</p><form id="logout-form"><button class="secondary" type="submit">Sair</button></form></section>
+<section><p class="eyebrow">SEU AMBIENTE</p><h2 id="tenant-name"></h2><p><span id="user-name"></span> · <span id="role"></span></p><span id="tenant-id" hidden></span><form id="logout-form"><button class="secondary" type="submit">Sair</button></form></section>
+<nav class="toolbar" aria-label="Cadastros"><button id="tab-accounts" aria-pressed="true">Contas</button><button id="tab-histories" aria-pressed="false">Históricos</button><button id="tab-settings" aria-pressed="false">Ambiente</button><button id="catalog-refresh" class="secondary">Atualizar listas</button></nav>
+<div id="panel-accounts">
+<section class="balance"><p>Saldos iniciais das contas ativas</p><strong id="opening-total">R$ 0,00</strong><p class="note">Valores de abertura. Ainda não incluem lançamentos.</p></section>
+<section><h2>Contas</h2><label class="check"><input id="accounts-inactive" type="checkbox">Mostrar também as inativas</label><div class="table-scroll"><table><thead><tr><th>Código</th><th>Número</th><th>Nome / banco</th><th>Saldo inicial</th><th>Situação</th><th>Ação</th></tr></thead><tbody id="accounts-body"></tbody></table></div><p id="accounts-empty"></p></section>
+<section id="account-editor"><h2 id="account-title">Nova conta</h2><form id="account-form">
+<label for="account-code">Código</label><input id="account-code" maxlength="20" required>
+<label for="account-number">Número (opcional)</label><input id="account-number" maxlength="40">
+<label for="account-name">Nome / banco</label><input id="account-name" maxlength="100" required>
+<label for="account-balance">Saldo inicial</label><input id="account-balance" value="0,00" inputmode="decimal" maxlength="24" required><p class="note">Sem separador de milhar. Ex.: 1234,56 ou -250,00.</p>
+<label class="check"><input id="account-active" type="checkbox" checked>Ativa</label>
+<button type="submit">Salvar conta</button><button id="account-cancel" type="button" class="secondary">Descartar edição / nova conta</button></form><p class="note">Desmarque Ativa para desativar a conta e preservar seu cadastro.</p></section>
+</div>
+<div id="panel-histories" hidden>
+<section><h2>Históricos</h2><label class="check"><input id="histories-inactive" type="checkbox">Mostrar também os inativos</label><div class="table-scroll"><table><thead><tr><th>Código</th><th>Descrição</th><th>Sentido</th><th>Situação</th><th>Ação</th></tr></thead><tbody id="histories-body"></tbody></table></div><p id="histories-empty"></p></section>
+<section id="history-editor"><h2 id="history-title">Novo histórico</h2><form id="history-form">
+<label for="history-code">Código</label><input id="history-code" maxlength="20" required>
+<label for="history-description">Descrição</label><input id="history-description" maxlength="100" required>
+<label for="history-direction">Sentido</label><select id="history-direction"><option value="1">Entrada (+)</option><option value="-1">Saída (−)</option></select>
+<label class="check"><input id="history-active" type="checkbox" checked>Ativo</label>
+<button type="submit">Salvar histórico</button><button id="history-cancel" type="button" class="secondary">Descartar edição / novo histórico</button></form></section>
+</div>
+<div id="panel-settings" hidden><p class="note">Somente o administrador pode alterar o ambiente e adicionar usuários.</p>
 <div id="owner-controls" class="columns" hidden>
 <section><h2>Nome do ambiente</h2><form id="rename-form"><label for="rename-name">Nome</label><input id="rename-name" maxlength="100" required><button type="submit">Salvar nome</button></form></section>
 <section><h2>Adicionar usuário de consulta</h2><p class="note">Este usuário acessará somente este ambiente e não poderá alterar suas configurações.</p><form id="member-form">
 <label for="member-name">Nome</label><input id="member-name" maxlength="100" autocomplete="off" required>
 <label for="member-email">E-mail</label><input id="member-email" type="email" maxlength="254" autocomplete="off" required>
 <label for="member-password">Senha (12 a 128 caracteres)</label><input id="member-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
-<button type="submit">Adicionar usuário</button></form></section>
-</div></div>
-<p class="note">Ciclo 2 · Protótipo de estudo. Use dados de teste. O aplicativo desktop continua separado.</p>
+<label for="member-confirm">Confirme a senha</label><input id="member-confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required><button type="submit">Adicionar usuário</button></form></section>
+</div></div></div>
+<p class="note">Ciclo 3 · Protótipo de estudo. Use dados de teste. O aplicativo desktop continua separado.</p>
 <noscript>Ative JavaScript para carregar o aplicativo WebAssembly.</noscript>
 </main><script type="module" src="/bootstrap.js"></script></body></html>

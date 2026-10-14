@@ -94,7 +94,7 @@ async fn authentication_and_tenant_isolation() {
     let router = app(pool.clone(), "web", config());
     let (code, _, _) = call(&router, "GET", "/api/auth/me", None, Value::Null, ORIGIN).await;
     assert_eq!(code, 401);
-    let registration = |mail: &str, tenant: &str| json!({"email":mail,"password":PASSWORD,"name":"Test owner","tenant_name":tenant});
+    let registration = |mail: &str, tenant: &str| json!({"email":mail,"password":PASSWORD,"password_confirmation":PASSWORD,"name":"Test owner","tenant_name":tenant});
     let (code, _, _) = call(
         &router,
         "POST",
@@ -110,7 +110,7 @@ async fn authentication_and_tenant_isolation() {
         "POST",
         "/api/auth/register",
         None,
-        json!({"email":"a@test.invalid","password":"short","name":"A","tenant_name":"Alpha"}),
+        json!({"email":"a@test.invalid","password":"short","password_confirmation":"short","name":"A","tenant_name":"Alpha"}),
         ORIGIN,
     )
     .await;
@@ -330,7 +330,7 @@ async fn authentication_and_tenant_isolation() {
         "POST",
         "/api/members",
         Some(&a),
-        json!({"email":"viewer@test.invalid","name":"Viewer","password":PASSWORD}),
+        json!({"email":"viewer@test.invalid","name":"Viewer","password":PASSWORD,"password_confirmation":PASSWORD}),
         ORIGIN,
     )
     .await;
@@ -358,6 +358,7 @@ async fn authentication_and_tenant_isolation() {
     .await;
     assert_eq!(mv["tenant_id"], ta);
     assert_eq!(mv["role"], "viewer");
+    catalog_checks(&router, &pool, &a, &b, &viewer, tenant_a, ua, ub).await;
     let (code, _, _) = call(
         &router,
         "PUT",
@@ -373,7 +374,7 @@ async fn authentication_and_tenant_isolation() {
         "POST",
         "/api/members",
         Some(&viewer),
-        json!({"email":"bad@test.invalid","name":"bad","password":PASSWORD}),
+        json!({"email":"bad@test.invalid","name":"bad","password":PASSWORD,"password_confirmation":PASSWORD}),
         ORIGIN,
     )
     .await;
@@ -551,4 +552,358 @@ async fn authentication_and_tenant_isolation() {
     println!("PASS viewer permissions, password hashing, session rotation/revocation/expiry, disabled users, shared throttling and secure cookie");
     pool.close().await;
     admin.close().await;
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn catalog_checks(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    a: &str,
+    b: &str,
+    viewer: &str,
+    tenant: Uuid,
+    user: Uuid,
+    other_user: Uuid,
+) {
+    let account = |code: &str, amount: &str| json!({"code":code,"number":"","name":"Banco teste","opening_balance":amount,"active":true});
+    let history = |code: &str, direction: i16| json!({"code":code,"description":"Histórico teste","direction":direction,"active":true});
+    let mismatch = json!({"email":"mismatch@test.invalid","name":"Mismatch","tenant_name":"Mismatch","password":PASSWORD,"password_confirmation":"different"});
+    assert_eq!(
+        call(router, "POST", "/api/auth/register", None, mismatch, ORIGIN)
+            .await
+            .0,
+        400
+    );
+    assert_eq!(call(router,"POST","/api/members",Some(a),json!({"email":"mismatch@test.invalid","name":"Mismatch","password":PASSWORD,"password_confirmation":"different"}),ORIGIN).await.0,400);
+    assert_eq!(call(router,"POST","/api/auth/register",None,json!({"email":"missingconfirm@test.invalid","name":"X","tenant_name":"X","password":PASSWORD}),ORIGIN).await.0,422);
+    for path in ["/api/accounts", "/api/histories"] {
+        assert_eq!(
+            call(router, "GET", path, None, Value::Null, ORIGIN).await.0,
+            401
+        );
+        assert_eq!(
+            call(router, "GET", path, Some(viewer), Value::Null, ORIGIN)
+                .await
+                .0,
+            200
+        );
+    }
+    for (path, body) in [
+        ("/api/accounts", account("1", "0.10")),
+        ("/api/histories", history("1", 1)),
+    ] {
+        assert_eq!(
+            call(router, "POST", path, Some(viewer), body.clone(), ORIGIN)
+                .await
+                .0,
+            403
+        );
+        assert_eq!(
+            call(
+                router,
+                "POST",
+                path,
+                Some(a),
+                body.clone(),
+                "https://evil.invalid"
+            )
+            .await
+            .0,
+            403
+        );
+        let mut spoof = body;
+        spoof["tenant_id"] = json!(tenant);
+        assert_eq!(
+            call(router, "POST", path, Some(a), spoof, ORIGIN).await.0,
+            422
+        );
+    }
+    let (status, first, _) = call(
+        router,
+        "POST",
+        "/api/accounts",
+        Some(a),
+        account("1", "0.10"),
+        ORIGIN,
+    )
+    .await;
+    assert_eq!(status, 201);
+    assert_eq!(first["code"], "01");
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/accounts",
+            Some(b),
+            account("01", "99.00"),
+            ORIGIN
+        )
+        .await
+        .0,
+        201
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/accounts",
+            Some(a),
+            account("01", "1"),
+            ORIGIN
+        )
+        .await
+        .0,
+        409
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/accounts",
+            Some(a),
+            account("2", "0,20"),
+            ORIGIN
+        )
+        .await
+        .0,
+        201
+    );
+    for amount in ["1.001", "1.000,00", "1e2", "90000000000.01"] {
+        assert_eq!(
+            call(
+                router,
+                "POST",
+                "/api/accounts",
+                Some(a),
+                account("invalid", amount),
+                ORIGIN
+            )
+            .await
+            .0,
+            400
+        );
+    }
+    let path = format!("/api/accounts/{}", first["id"].as_str().unwrap());
+    let mut edit = account("1", "-0.10");
+    edit["expected_version"] = json!(1);
+    assert_eq!(
+        call(router, "GET", &path, Some(b), Value::Null, ORIGIN)
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(router, "PUT", &path, Some(b), edit.clone(), ORIGIN)
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(router, "PUT", &path, Some(viewer), edit.clone(), ORIGIN)
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        call(router, "GET", "/api/accounts", Some(a), Value::Null, ORIGIN)
+            .await
+            .1["active_opening_balance"],
+        "0.30"
+    );
+    let (left, right) = tokio::join!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN),
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+    );
+    assert!((left.0 == 200 && right.0 == 409) || (left.0 == 409 && right.0 == 200));
+    assert_eq!(
+        call(router, "GET", "/api/accounts", Some(a), Value::Null, ORIGIN)
+            .await
+            .1["active_opening_balance"],
+        "0.10"
+    );
+    edit["expected_version"] = json!(2);
+    edit["active"] = json!(false);
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        call(router, "GET", "/api/accounts", Some(a), Value::Null, ORIGIN)
+            .await
+            .1["active_opening_balance"],
+        "0.20"
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/accounts",
+            Some(a),
+            account("1", "0"),
+            ORIGIN
+        )
+        .await
+        .0,
+        409
+    );
+    edit["expected_version"] = json!(3);
+    edit["active"] = json!(true);
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+            .await
+            .0,
+        200
+    );
+    edit["expected_version"] = json!(4);
+    edit["code"] = json!("02");
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit, ORIGIN).await.0,
+        409
+    );
+    assert_eq!(
+        call(router, "GET", &path, Some(a), Value::Null, ORIGIN)
+            .await
+            .1["version"],
+        4
+    );
+    let (status, h, _) = call(
+        router,
+        "POST",
+        "/api/histories",
+        Some(a),
+        history("income", 1),
+        ORIGIN,
+    )
+    .await;
+    assert_eq!(status, 201);
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/histories",
+            Some(b),
+            history("income", -1),
+            ORIGIN
+        )
+        .await
+        .0,
+        201
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/histories",
+            Some(a),
+            history("INCOME", 1),
+            ORIGIN
+        )
+        .await
+        .0,
+        409
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/histories",
+            Some(a),
+            history("invalid", 0),
+            ORIGIN
+        )
+        .await
+        .0,
+        400
+    );
+    let path = format!("/api/histories/{}", h["id"].as_str().unwrap());
+    let mut edit = history("income", -1);
+    edit["expected_version"] = json!(1);
+    edit["active"] = json!(false);
+    assert_eq!(
+        call(router, "GET", &path, Some(b), Value::Null, ORIGIN)
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(router, "PUT", &path, Some(b), edit.clone(), ORIGIN)
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(router, "PUT", &path, Some(viewer), edit.clone(), ORIGIN)
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+            .await
+            .0,
+        409
+    );
+    edit["expected_version"] = json!(2);
+    edit["active"] = json!(true);
+    let result = call(router, "PUT", &path, Some(a), edit, ORIGIN).await;
+    assert_eq!(result.0, 200);
+    assert_eq!(result.1["direction"], -1);
+    for table in ["accounts", "histories"] {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table}"))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "no leaked tenant context");
+        let mut tx = pool.begin().await.unwrap();
+        set_context(&mut tx, tenant, user).await.unwrap();
+        let wrong: i64 =
+            sqlx::query_scalar(&format!("SELECT count(*) FROM {table} WHERE tenant_id<>$1"))
+                .bind(tenant)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(wrong, 0);
+        let err = sqlx::query(&format!("UPDATE {table} SET updated_by=$1"))
+            .bind(other_user)
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.as_database_error().unwrap().code().as_deref(),
+            Some("23503")
+        );
+        tx.rollback().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        set_context(&mut tx, tenant, user).await.unwrap();
+        let err = sqlx::query(&format!("DELETE FROM {table}"))
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.as_database_error().unwrap().code().as_deref(),
+            Some("42501")
+        );
+        tx.rollback().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        set_context(&mut tx, tenant, user).await.unwrap();
+        let err = sqlx::query(&format!("UPDATE {table} SET tenant_id=$1"))
+            .bind(Uuid::new_v4())
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.as_database_error().unwrap().code().as_deref(),
+            Some("42501")
+        );
+        tx.rollback().await.unwrap();
+    }
+    println!("PASS cycle 3: confirmation, accounts/histories, exact cents, versions/concurrent writes, deactivation, viewer, CSRF, tenant isolation and direct RLS");
 }
