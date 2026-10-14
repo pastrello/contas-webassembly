@@ -1,32 +1,13 @@
-# Contas WebAssembly
+# Contas — estudo WebAssembly e SaaS
 
-Projeto independente para estudar Blazor WebAssembly com C# e uma API ASP.NET Core, usando SQLite no servidor.
+A branch `codex/saas-rust-cycle-1` inicia o SaaS em **Rust + WebAssembly + PostgreSQL**, na pasta [`saas`](saas/README.md).
 
-## Origem e separação
+O código C#/SQLite permanece preservado em `src`, com seus scripts, testes e documentação. Nenhum dado foi convertido. O projeto desktop e suas releases continuam no [repositório original](https://github.com/pastrello/contas).
 
-Derivado de [pastrello/contas](https://github.com/pastrello/contas), preservando seu histórico Git. Esta base inclui as correções locais da versão 1.6.2 e a auditoria de lançamentos de 02/10/2026.
+Este repositório independente preserva o histórico do original e a base desktop auditada 1.6.2. A branch `main` mantém essa base; o desenvolvimento SaaS ocorre nesta branch. O plano inicial Blazor/SQLite foi substituído por Rust/PostgreSQL conforme a direção escolhida para estudar WebAssembly e SaaS.
 
-É uma cópia independente, não um fork nativo do GitHub. O projeto desktop e suas releases continuam no repositório original. Nenhum banco, backup, instalador ou arquivo pessoal foi copiado. As releases desktop não são republicadas aqui.
+- [Executar e testar o ciclo 1](saas/README.md)
+- [Referência desktop](docs/README-DESKTOP.md)
+- [Auditoria financeira herdada](docs/10-AUDITORIA-LANCAMENTOS.md)
 
-## Estado inicial
-
-O código ainda é a aplicação desktop de referência. Não há cliente WebAssembly nem API implementados nesta etapa. Os modelos, serviços financeiros, repositórios e testes serão a base do estudo.
-
-Arquitetura planejada:
-
-- Caixa.Web: interface Blazor WebAssembly executada no navegador.
-- Caixa.Api: endpoints ASP.NET Core no servidor.
-- Caixa.Core: regras financeiras e acesso ao SQLite, usados pela API.
-- SQLite: banco no servidor; sem acesso direto pelo navegador.
-
-O primeiro exercício será listar contas e saldos por meio de uma API real. A implementação web usará um banco de estudo separado do banco operacional desktop.
-
-## Documentação herdada
-
-Os arquivos em docs e os scripts de build/instalador ainda descrevem a versão desktop. Servem de referência histórica e não representam uma versão web pronta. O instalador herdado mantém a identidade do aplicativo desktop: não o distribua como produto WebAssembly.
-
-- [README original preservado](docs/README-DESKTOP.md)
-- [Arquitetura desktop](docs/01-ARQUITETURA.md)
-- [Auditoria financeira](docs/10-AUDITORIA-LANCAMENTOS.md)
-
-A versão 1.6.2 nos metadados identifica a base desktop, não uma release web.
+Os scripts de instalador da raiz pertencem ao desktop, não ao SaaS. Login e isolamento de clientes estão previstos para o ciclo 2; este primeiro ciclo demonstra somente navegador → API → PostgreSQL.

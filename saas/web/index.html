@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contas · SaaS</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">CONTAS / AMBIENTE DE ESTUDO</p>
+    <h1>Um novo espaço para suas contas.</h1>
+    <p class="intro">A primeira etapa do Contas SaaS está em construção. Este ambiente é separado do aplicativo desktop.</p>
+    <section aria-labelledby="status-title">
+      <h2 id="status-title">Conexão do ambiente</h2>
+      <div aria-live="polite">
+        <p id="overall-status">Verificando conexão…</p>
+        <dl>
+          <dt>Navegador</dt><dd id="wasm-status">Carregando WebAssembly…</dd>
+          <dt>Serviço</dt><dd id="api-status">Aguardando resposta…</dd>
+          <dt>Banco de dados</dt><dd id="database-status">Aguardando resposta…</dd>
+        </dl>
+      </div>
+      <a class="button" href="/">Verificar novamente</a>
+    </section>
+    <p class="note">Ciclo 1 de desenvolvimento. Login, ambientes de clientes e lançamentos serão adicionados nas próximas etapas.</p>
+    <noscript>Ative JavaScript para carregar o aplicativo WebAssembly.</noscript>
+  </main>
+  <script type="module" src="/bootstrap.js"></script>
+</body>
+</html>

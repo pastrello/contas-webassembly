@@ -1,0 +1,4 @@
+/target/
+/.dev/
+/web/pkg/
+/.env
