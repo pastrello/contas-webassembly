@@ -20,9 +20,9 @@
 </div>
 <div id="workspace" hidden>
 <section><p class="eyebrow">SEU AMBIENTE</p><h2 id="tenant-name"></h2><p><span id="user-name"></span> · <span id="role"></span></p><span id="tenant-id" hidden></span><form id="logout-form"><button class="secondary" type="submit">Sair</button></form></section>
-<nav class="toolbar" aria-label="Cadastros"><button id="tab-accounts" aria-pressed="true">Contas</button><button id="tab-histories" aria-pressed="false">Históricos</button><button id="tab-settings" aria-pressed="false">Ambiente</button><button id="catalog-refresh" class="secondary">Atualizar listas</button></nav>
+<nav class="toolbar" aria-label="Cadastros"><button id="tab-accounts" aria-pressed="true">Contas</button><button id="tab-histories" aria-pressed="false">Históricos</button><button id="tab-entries" aria-pressed="false">Lançamentos</button><button id="tab-settings" aria-pressed="false">Ambiente</button><button id="catalog-refresh" class="secondary">Atualizar listas</button></nav>
 <div id="panel-accounts">
-<section class="balance"><p>Saldos iniciais das contas ativas</p><strong id="opening-total">R$ 0,00</strong><p class="note">Valores de abertura. Ainda não incluem lançamentos.</p></section>
+<section class="balance"><p>Saldos iniciais das contas ativas</p><strong id="opening-total">R$ 0,00</strong><p class="note">Valores de abertura. Valores de abertura; consulte os saldos com movimentação na aba Lançamentos.</p></section>
 <section><h2>Contas</h2><label class="check"><input id="accounts-inactive" type="checkbox">Mostrar também as inativas</label><div class="table-scroll"><table><thead><tr><th>Código</th><th>Número</th><th>Nome / banco</th><th>Saldo inicial</th><th>Situação</th><th>Ação</th></tr></thead><tbody id="accounts-body"></tbody></table></div><p id="accounts-empty"></p></section>
 <section id="account-editor"><h2 id="account-title">Nova conta</h2><form id="account-form">
 <label for="account-code">Código</label><input id="account-code" maxlength="20" required>
@@ -41,6 +41,25 @@
 <label class="check"><input id="history-active" type="checkbox" checked>Ativo</label>
 <button type="submit">Salvar histórico</button><button id="history-cancel" type="button" class="secondary">Descartar edição / novo histórico</button></form></section>
 </div>
+<div id="panel-entries" hidden>
+<section><h2>Extrato e saldos por conta</h2>
+<form id="ledger-form"><label for="ledger-account">Conta</label><select id="ledger-account" required></select>
+<div class="columns"><div><label for="ledger-from">De (opcional)</label><input id="ledger-from" type="date" min="0001-01-01" max="9999-12-31"></div><div><label for="ledger-to">Até (opcional)</label><input id="ledger-to" type="date" min="0001-01-01" max="9999-12-31"></div></div>
+<label class="check"><input id="ledger-archived" type="checkbox">Mostrar arquivados</label><label class="check"><input id="ledger-cancelled" type="checkbox">Mostrar cancelados</label><button type="submit">Consultar / atualizar saldos</button></form>
+<p id="ledger-context" class="note"></p><p id="ledger-totals" class="totals"></p><p class="note">Saldos incluem arquivados e excluem cancelados, independentemente dos filtros de exibição. O saldo bancário inclui somente compensados. As datas inicial e final são inclusivas.</p>
+<p id="ledger-count"></p><div class="table-scroll"><table><thead><tr><th>Data</th><th>Histórico</th><th>Documento</th><th>Complemento</th><th>Valor</th><th>Situação</th><th>Compensado</th><th>Ações</th></tr></thead><tbody id="entries-body"></tbody></table></div><button id="entries-prev" type="button" class="secondary">Página anterior</button><button id="entries-next" type="button" class="secondary">Próxima página</button>
+</section>
+<section id="entry-editor" hidden><h2 id="entry-title">Novo lançamento</h2><form id="entry-form">
+<label for="entry-account">Conta</label><select id="entry-account" required></select>
+<label for="entry-date">Data</label><input id="entry-date" type="date" min="0001-01-01" max="9999-12-31" required>
+<label for="entry-history">Histórico (define Entrada ou Saída)</label><select id="entry-history" required></select>
+<label for="entry-document">Documento (opcional)</label><input id="entry-document" maxlength="60">
+<label for="entry-description">Complemento (opcional)</label><input id="entry-description" maxlength="500">
+<label for="entry-amount">Valor positivo</label><input id="entry-amount" inputmode="decimal" maxlength="24" required><p class="note">Sem separador de milhar. Ex.: 1234,56. O sentido vem do histórico.</p>
+<label class="check"><input id="entry-cleared" type="checkbox">Compensado no banco</label><label class="check"><input id="entry-archived" type="checkbox">Arquivado (continua nos saldos)</label>
+<button type="submit">Salvar lançamento</button><button id="entry-reset" type="button" class="secondary">Descartar edição / novo lançamento</button>
+</form><p class="note">Para compensar, desfazer compensação ou arquivar, edite o lançamento, altere a opção e salve. Cancelados permanecem disponíveis para consulta.</p></section>
+</div>
 <div id="panel-settings" hidden><p class="note">Somente o administrador pode alterar o ambiente e adicionar usuários.</p>
 <div id="owner-controls" class="columns" hidden>
 <section><h2>Nome do ambiente</h2><form id="rename-form"><label for="rename-name">Nome</label><input id="rename-name" maxlength="100" required><button type="submit">Salvar nome</button></form></section>
@@ -50,6 +69,6 @@
 <label for="member-password">Senha (12 a 128 caracteres)</label><input id="member-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
 <label for="member-confirm">Confirme a senha</label><input id="member-confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required><button type="submit">Adicionar usuário</button></form></section>
 </div></div></div>
-<p class="note">Ciclo 3 · Protótipo de estudo. Use dados de teste. O aplicativo desktop continua separado.</p>
+<p class="note">Ciclo 4 · Protótipo de estudo. Use dados de teste. O aplicativo desktop continua separado.</p>
 <noscript>Ative JavaScript para carregar o aplicativo WebAssembly.</noscript>
 </main><script type="module" src="/bootstrap.js"></script></body></html>

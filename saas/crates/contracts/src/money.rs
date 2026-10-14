@@ -27,7 +27,7 @@ pub fn parse_cents(text: &str) -> Result<i64, &'static str> {
         .and_then(|v| v.checked_mul(100))
         .and_then(|v| v.checked_add(cents))
         .filter(|v| *v <= MAX_CENTS)
-        .ok_or("Saldo inicial fora do limite permitido.")?;
+        .ok_or("Valor fora do limite permitido.")?;
     Ok(if negative { -amount } else { amount })
 }
 pub fn decimal(cents: i128) -> String {

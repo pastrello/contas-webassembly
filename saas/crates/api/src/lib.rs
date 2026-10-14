@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod catalogs;
+pub mod entries;
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Argon2,
@@ -47,6 +48,9 @@ pub fn app(pool: PgPool, web_dir: &str, config: Config) -> Router {
         .route("/api/auth/me",get(auth::me))
         .route("/api/tenants/{id}",get(auth::tenant).put(auth::rename))
         .route("/api/members",post(auth::add_member))
+        .route("/api/entries",get(entries::ledger).post(entries::create))
+        .route("/api/entries/{id}",get(entries::get).put(entries::update))
+        .route("/api/entries/{id}/cancel",post(entries::cancel))
         .route("/api/accounts",get(catalogs::accounts).post(catalogs::create_account))
         .route("/api/accounts/{id}",get(catalogs::get_account).put(catalogs::update_account))
         .route("/api/histories",get(catalogs::histories).post(catalogs::create_history))
@@ -61,7 +65,7 @@ pub fn app(pool: PgPool, web_dir: &str, config: Config) -> Router {
         .with_state(AppState {pool,config,hash_slots:Arc::new(Semaphore::new(4)),dummy_hash})
 }
 pub async fn check_runtime_role(pool: &PgPool) -> Result<(), sqlx::Error> {
-    let safe:bool = sqlx::query_scalar("SELECT NOT (r.rolsuper OR r.rolbypassrls OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication) AND NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member=r.oid) AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid IN ('tenants'::regclass,'memberships'::regclass,'tenant_settings'::regclass,'accounts'::regclass,'histories'::regclass) AND (c.relowner=r.oid OR NOT c.relrowsecurity OR NOT c.relforcerowsecurity)) FROM pg_roles r WHERE r.rolname=current_user").fetch_one(pool).await?;
+    let safe:bool = sqlx::query_scalar("SELECT NOT (r.rolsuper OR r.rolbypassrls OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication) AND NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member=r.oid) AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid IN ('tenants'::regclass,'memberships'::regclass,'tenant_settings'::regclass,'accounts'::regclass,'histories'::regclass,'entries'::regclass) AND (c.relowner=r.oid OR NOT c.relrowsecurity OR NOT c.relforcerowsecurity)) FROM pg_roles r WHERE r.rolname=current_user").fetch_one(pool).await?;
     if !safe {
         return Err(sqlx::Error::Protocol(
             "API requires a non-owner role without elevated privileges and enforced RLS".into(),

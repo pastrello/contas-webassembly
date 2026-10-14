@@ -147,6 +147,7 @@ async fn save_account(
     auth::write_allowed(state, headers)?;
     let (mut tx, identity) = auth::authorized(state, headers).await?;
     owner(&identity.role)?;
+    crate::entries::lock(&mut tx, identity.tenant).await?;
     let code = code(&input.code)?;
     let number = text(&input.number, 40, false)?;
     let name = text(&input.name, 100, true)?;
@@ -163,6 +164,18 @@ async fn save_account(
                 .await?;
         if current.ok_or_else(missing)? != version {
             return Err(conflict());
+        }
+        let used: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM entries WHERE account_id=$1)")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let old: i64 = sqlx::query_scalar("SELECT opening_balance_cents FROM accounts WHERE id=$1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if used && old != cents {
+            return Err(ApiError(StatusCode::CONFLICT,"Conta com lançamentos: saldo inicial não pode ser alterado. Registre um lançamento de ajuste."));
         }
         sqlx::query("UPDATE accounts SET code=$1,number=$2,name=$3,opening_balance_cents=$4,active=$5,version=version+1,updated_by=$6,updated_at=now() WHERE id=$7 RETURNING id,code,number,name,opening_balance_cents,active,version")
             .bind(code).bind(number).bind(name).bind(cents).bind(input.active).bind(identity.user).bind(id).fetch_one(&mut *tx).await.map_err(db)?
@@ -228,6 +241,7 @@ async fn save_history(
     auth::write_allowed(state, headers)?;
     let (mut tx, identity) = auth::authorized(state, headers).await?;
     owner(&identity.role)?;
+    crate::entries::lock(&mut tx, identity.tenant).await?;
     let code = code(&input.code)?;
     let description = text(&input.description, 100, true)?;
     if ![-1, 1].contains(&input.direction) {
@@ -245,6 +259,21 @@ async fn save_history(
                 .await?;
         if current.ok_or_else(missing)? != version {
             return Err(conflict());
+        }
+        let used: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM entries WHERE history_id=$1)")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let old: i16 = sqlx::query_scalar("SELECT direction FROM histories WHERE id=$1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if used && old != input.direction {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "Histórico com lançamentos: o sentido não pode ser alterado.",
+            ));
         }
         sqlx::query("UPDATE histories SET code=$1,description=$2,direction=$3,active=$4,version=version+1,updated_by=$5,updated_at=now() WHERE id=$6 RETURNING id,code,description,direction,active,version")
             .bind(code).bind(description).bind(input.direction).bind(input.active).bind(identity.user).bind(id).fetch_one(&mut *tx).await.map_err(db)?

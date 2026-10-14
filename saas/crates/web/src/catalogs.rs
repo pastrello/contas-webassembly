@@ -66,6 +66,11 @@ pub async fn load(owner: bool) -> Result<(), String> {
     visible("account-editor", owner);
     visible("history-editor", owner);
     render();
+    let (accounts, histories) = DATA.with(|d| {
+        let d = d.borrow();
+        (d.accounts.clone(), d.histories.clone())
+    });
+    entries::load(owner, &accounts, &histories).await?;
     Ok(())
 }
 fn cell(row: &web_sys::Element, value: &str) {
@@ -334,9 +339,9 @@ pub fn init() {
     for id in ["accounts-inactive", "histories-inactive"] {
         bind(id, "change", |_| render());
     }
-    for section in ["accounts", "histories", "settings"] {
+    for section in ["accounts", "histories", "entries", "settings"] {
         bind(&format!("tab-{section}"), "click", move |_| {
-            for target in ["accounts", "histories", "settings"] {
+            for target in ["accounts", "histories", "entries", "settings"] {
                 visible(&format!("panel-{target}"), target == section);
                 element(&format!("tab-{target}"))
                     .set_attribute(
@@ -351,7 +356,7 @@ pub fn init() {
         if BUSY.with(|b| b.get()) {
             return;
         }
-        if DATA.with(|d| d.borrow().account_dirty || d.borrow().history_dirty) {
+        if entries::dirty() || DATA.with(|d| d.borrow().account_dirty || d.borrow().history_dirty) {
             show(
                 "message",
                 "Salve ou descarte as edições antes de atualizar as listas.",

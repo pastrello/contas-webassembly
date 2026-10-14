@@ -1,4 +1,4 @@
-# Contas SaaS — ciclo 3
+# Contas SaaS — ciclo 4
 
 Rust + WebAssembly + PostgreSQL. Projeto de estudo separado do desktop C#/SQLite. Código em `crates/api`, `crates/web`, `crates/contracts`; migrações versionadas em `migrations`.
 
@@ -10,7 +10,7 @@ Rust + WebAssembly + PostgreSQL. Projeto de estudo separado do desktop C#/SQLite
 - Usuário de consulta acessa o mesmo ambiente, sem alterar configurações ou cadastrar usuários.
 - Cada cadastro de cliente tem dados independentes. O cliente ativo vem da sessão validada no servidor; o navegador não escolhe um `tenant_id` para autorizar uma operação.
 
-Contas, históricos e saldos iniciais estão disponíveis. Lançamentos financeiros ficam para o ciclo 4. Cadastro público é configurável; nesta fase não há confirmação de e-mail, recuperação/troca de senha, convites ou remoção de usuários pela interface. Usar apenas dados de estudo. A política de recuperação de contas e a preparação operacional antecederão a publicação para clientes reais.
+Contas, históricos, lançamentos, saldos real/bancário e extrato por período estão disponíveis. Veja [regras e uso do ciclo 4](CICLO-4.md). Cadastro público é configurável; nesta fase não há confirmação de e-mail, recuperação/troca de senha, convites ou remoção de usuários pela interface. Usar apenas dados de estudo. A política de recuperação de contas e a preparação operacional antecederão a publicação para clientes reais.
 
 ## Executar no Windows
 
@@ -32,7 +32,7 @@ O compilador Rust e o SDK complementar desta máquina estão em `.dev`, sem alte
 - Cookie HttpOnly e SameSite=Strict. Secure habilitado por padrão. Somente APP_ENV=development permite cookie sem Secure para testes HTTP locais.
 - Escritas exigem Origin igual a PUBLIC_ORIGIN e cabeçalho X-Contas-Request. Sem CORS aberto. Respostas não são armazenadas em cache; CSP limita recursos à própria origem.
 - Limitação de tentativas compartilhada no PostgreSQL: 10 logins por e-mail/15 minutos, teto global de 500; 100 cadastros globais e 30 novos usuários por cliente/15 minutos. Conta tentativas bem-sucedidas também. É uma proteção inicial, não substitui controles de tráfego de produção.
-- RLS obrigatório em tenants, memberships, tenant_settings, accounts e histories. Contexto definido com `set_config(..., true)` em transação, sem vazar ao próximo uso da conexão. Chaves compostas impedem referências entre clientes.
+- RLS obrigatório em tenants, memberships, tenant_settings, accounts, histories e entries. Contexto definido com `set_config(..., true)` em transação, sem vazar ao próximo uso da conexão. Chaves compostas impedem referências entre clientes.
 - A API verifica na inicialização que seu papel não é proprietário das tabelas, superusuário, BYPASSRLS, administrador de papéis/bancos ou membro de outro papel. Ela não executa migrações automaticamente.
 
 Tabelas globais de identidade/sessões são acessadas somente pela API, por consultas parametrizadas. RLS protege dados por cliente; não é uma defesa contra comprometimento da credencial do serviço ou do administrador PostgreSQL. A autorização owner/viewer é aplicada na API. Inicialmente, cada usuário cadastrado pertence a um ambiente; o esquema permite evoluir para vários vínculos, mas não há seletor de ambientes nesta etapa.
@@ -78,4 +78,4 @@ Test-Smoke verifica o processo HTTP real, arquivos WASM, disponibilidade e queda
 - Start-Dev cria backup PostgreSQL em .dev/backups antes de migrar e compara usuários, ambientes e vínculos antes/depois. O backup permanece somente nesta máquina; não é uma rotina de backup de produção.
 - Test-Cycle2 mantém seu nome para compatibilidade e agora cobre também o ciclo 3: confirmação de senha, valores exatos, cadastros, concorrência, permissões e isolamento das novas tabelas.
 
-A próxima etapa adicionará lançamentos e suas regras transacionais. Antes disso, alterações de sentido e saldo inicial não precisam conciliar movimentações, pois elas ainda não existem neste módulo.
+Com o ciclo 4, contas e históricos usados têm saldo inicial e sentido protegidos. Correções são feitas por lançamentos explícitos. A regressão inclui quatro conexões concorrentes, idempotência e paginação; veja [validação](VALIDACAO-CICLO-4.md).

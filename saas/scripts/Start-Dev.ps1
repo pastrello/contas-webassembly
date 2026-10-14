@@ -54,6 +54,15 @@ try {
         $identityBefore=& "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -tAc $identitySnapshot
         if ($LASTEXITCODE -ne 0) {throw 'Snapshot pre-migracao falhou'}
     }
+    $catalogSnapshots=@{}
+    foreach($table in @('accounts','histories','entries')) {
+        $existsTable=& "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -tAc "SELECT to_regclass('public.$table') IS NOT NULL"
+        if($LASTEXITCODE -ne 0){throw 'Verificacao de cadastros falhou'}
+        if($existsTable -eq 't') {
+            $catalogSnapshots[$table]=& "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -tAc "SELECT md5(coalesce(string_agg(row_to_json(t)::text,'' ORDER BY id),'')) FROM $table t"
+            if($LASTEXITCODE -ne 0){throw 'Snapshot de cadastros falhou'}
+        }
+    }
     & .\target\debug\contas-api.exe --migrate
     if ($LASTEXITCODE -ne 0) { throw 'Migracoes falharam' }
     if ($hasUsers -eq 't') {
@@ -61,6 +70,11 @@ try {
         if ($LASTEXITCODE -ne 0 -or $identityBefore -ne $identityAfter) {throw 'Identidades divergiram apos migracao; confira o backup antes de continuar'}
         Write-Host 'Usuarios, clientes e vinculos existentes preservados.'
     }
+    foreach($table in $catalogSnapshots.Keys) {
+        $after=& "$PostgresBin\psql.exe" -h 127.0.0.1 -p 55432 -U contas -d contas_saas -tAc "SELECT md5(coalesce(string_agg(row_to_json(t)::text,'' ORDER BY id),'')) FROM $table t"
+        if($LASTEXITCODE -ne 0 -or $after -ne $catalogSnapshots[$table]){throw 'Dados existentes divergiram apos migracao; confira o backup'}
+    }
+    Write-Host 'Contas, historicos e lancamentos preexistentes preservados.'
     Write-Host "Backup pre-migracao: $backupFile"
     $appPasswordFile = Join-Path $saasRoot '.dev\app-password.txt'
     if (-not (Test-Path $appPasswordFile)) { [IO.File]::WriteAllText($appPasswordFile,[Guid]::NewGuid().ToString('N')) }

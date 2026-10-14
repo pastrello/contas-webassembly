@@ -45,7 +45,7 @@ async fn call(
         .headers()
         .get(header::SET_COOKIE)
         .map(|v| v.to_str().unwrap().to_owned());
-    let bytes = to_bytes(response.into_body(), 16384).await.unwrap();
+    let bytes = to_bytes(response.into_body(), 1048576).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, body, cookie)
 }
@@ -359,6 +359,24 @@ async fn authentication_and_tenant_isolation() {
     assert_eq!(mv["tenant_id"], ta);
     assert_eq!(mv["role"], "viewer");
     catalog_checks(&router, &pool, &a, &b, &viewer, tenant_a, ua, ub).await;
+    let parallel_pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(&app_url)
+        .await
+        .unwrap();
+    let parallel_router = app(parallel_pool.clone(), "web", config());
+    entry_checks(
+        &parallel_router,
+        &parallel_pool,
+        &a,
+        &b,
+        &viewer,
+        tenant_a,
+        ua,
+        ub,
+    )
+    .await;
+    parallel_pool.close().await;
     let (code, _, _) = call(
         &router,
         "PUT",
@@ -906,4 +924,494 @@ async fn catalog_checks(
         tx.rollback().await.unwrap();
     }
     println!("PASS cycle 3: confirmation, accounts/histories, exact cents, versions/concurrent writes, deactivation, viewer, CSRF, tenant isolation and direct RLS");
+}
+
+fn entry_input(account: &str, history: &str, date: &str, amount: &str, cleared: bool) -> Value {
+    json!({"account_id":account,"history_id":history,"date":date,"amount":amount,"document":"Test","description":"Audit","cleared":cleared,"archived":false,"request_id":Uuid::new_v4()})
+}
+async fn balances(router: &Router, cookie: &str, account: &str, real: &str, bank: &str) {
+    let (status, value, _) = call(
+        router,
+        "GET",
+        &format!("/api/entries?account_id={account}"),
+        Some(cookie),
+        Value::Null,
+        ORIGIN,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(value["current_balance"], real);
+    assert_eq!(value["bank_balance"], bank);
+}
+#[allow(clippy::too_many_arguments)]
+async fn entry_checks(
+    router: &Router,
+    pool: &sqlx::PgPool,
+    a: &str,
+    b: &str,
+    viewer: &str,
+    tenant: Uuid,
+    user: Uuid,
+    other: Uuid,
+) {
+    let mut accounts = Vec::new();
+    for (cookie, code, amount) in [(a, "A4", "1000"), (a, "B4", "500"), (b, "C4", "999")] {
+        let (status,v,_)=call(router,"POST","/api/accounts",Some(cookie),json!({"code":code,"number":"","name":"Cycle 4","opening_balance":amount,"active":true}),ORIGIN).await;
+        assert_eq!(status, 201);
+        accounts.push(v["id"].as_str().unwrap().to_owned());
+    }
+    let mut histories = Vec::new();
+    for (cookie, code, direction) in [(a, "99", 1), (a, "OUT", -1), (b, "99", 1)] {
+        let (status, v, _) = call(
+            router,
+            "POST",
+            "/api/histories",
+            Some(cookie),
+            json!({"code":code,"description":"Cycle 4","direction":direction,"active":true}),
+            ORIGIN,
+        )
+        .await;
+        assert_eq!(status, 201);
+        histories.push(v["id"].as_str().unwrap().to_owned());
+    }
+    let ac = &accounts[0];
+    let target = &accounts[1];
+    let foreign = &accounts[2];
+    let hi = &histories[0];
+    let ho = &histories[1];
+    let url = format!("/api/entries?account_id={ac}");
+    assert_eq!(
+        call(router, "GET", &url, None, Value::Null, ORIGIN).await.0,
+        401
+    );
+    assert_eq!(
+        call(router, "GET", &url, Some(b), Value::Null, ORIGIN)
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(router, "GET", &url, Some(viewer), Value::Null, ORIGIN)
+            .await
+            .0,
+        200
+    );
+    balances(router, a, ac, "1000.00", "1000.00").await;
+    let income = entry_input(ac, hi, "2026-10-01", "200", true);
+    for (cookie, origin, status) in [
+        (Some(viewer), ORIGIN, 403),
+        (Some(a), "https://evil.invalid", 403),
+        (None, ORIGIN, 401),
+    ] {
+        assert_eq!(
+            call(
+                router,
+                "POST",
+                "/api/entries",
+                cookie,
+                income.clone(),
+                origin
+            )
+            .await
+            .0,
+            status
+        );
+    }
+    let mut spoof = income.clone();
+    spoof["tenant_id"] = json!(tenant);
+    assert_eq!(
+        call(router, "POST", "/api/entries", Some(a), spoof, ORIGIN)
+            .await
+            .0,
+        422
+    );
+    for (acc, hist) in [
+        (foreign.as_str(), hi.as_str()),
+        (ac.as_str(), histories[2].as_str()),
+    ] {
+        assert_eq!(
+            call(
+                router,
+                "POST",
+                "/api/entries",
+                Some(a),
+                entry_input(acc, hist, "2026-10-01", "1", false),
+                ORIGIN
+            )
+            .await
+            .0,
+            404
+        );
+    }
+    for amount in ["0", "-1", "1.001", "90000000000.01"] {
+        assert_eq!(
+            call(
+                router,
+                "POST",
+                "/api/entries",
+                Some(a),
+                entry_input(ac, hi, "2026-10-01", amount, false),
+                ORIGIN
+            )
+            .await
+            .0,
+            400
+        );
+    }
+    for date in ["2026-02-29", "2026-13-01", "0000-01-01"] {
+        assert_eq!(
+            call(
+                router,
+                "POST",
+                "/api/entries",
+                Some(a),
+                entry_input(ac, hi, date, "1", false),
+                ORIGIN
+            )
+            .await
+            .0,
+            400
+        );
+    }
+    let (left, right) = tokio::join!(
+        call(
+            router,
+            "POST",
+            "/api/entries",
+            Some(a),
+            income.clone(),
+            ORIGIN
+        ),
+        call(
+            router,
+            "POST",
+            "/api/entries",
+            Some(a),
+            income.clone(),
+            ORIGIN
+        )
+    );
+    assert_eq!(left.0, 201);
+    assert_eq!(right.0, 201);
+    assert_eq!(left.1["id"], right.1["id"]);
+    let incoming = left.1;
+    let mut different = income.clone();
+    different["amount"] = json!("201");
+    assert_eq!(
+        call(router, "POST", "/api/entries", Some(a), different, ORIGIN)
+            .await
+            .0,
+        409
+    );
+    let expense = entry_input(ac, ho, "2026-10-14", "150", false);
+    let (status, out, _) = call(
+        router,
+        "POST",
+        "/api/entries",
+        Some(a),
+        expense.clone(),
+        ORIGIN,
+    )
+    .await;
+    assert_eq!(status, 201);
+    balances(router, a, ac, "1050.00", "1200.00").await;
+    let path = format!("/api/entries/{}", out["id"].as_str().unwrap());
+    assert_eq!(
+        call(router, "GET", &path, Some(b), Value::Null, ORIGIN)
+            .await
+            .0,
+        404
+    );
+    let mut edit = expense.clone();
+    edit.as_object_mut().unwrap().remove("request_id");
+    edit["expected_version"] = json!(1);
+    edit["cleared"] = json!(true);
+    assert_eq!(
+        call(router, "PUT", &path, Some(b), edit.clone(), ORIGIN)
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(router, "PUT", &path, Some(viewer), edit.clone(), ORIGIN)
+            .await
+            .0,
+        403
+    );
+    let (left, right) = tokio::join!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN),
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+    );
+    assert!((left.0 == 200 && right.0 == 409) || (left.0 == 409 && right.0 == 200));
+    balances(router, a, ac, "1050.00", "1050.00").await;
+    edit["expected_version"] = json!(2);
+    edit["cleared"] = json!(false);
+    edit["amount"] = json!("175");
+    edit["archived"] = json!(true);
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+            .await
+            .0,
+        200
+    );
+    balances(router, a, ac, "1025.00", "1200.00").await;
+    let (status, v, _) = call(
+        router,
+        "GET",
+        &format!("{url}&from=2026-10-14&to=2026-10-14"),
+        Some(a),
+        Value::Null,
+        ORIGIN,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(v["previous_balance"], "1200.00");
+    assert_eq!(v["period_expense"], "175.00");
+    assert_eq!(v["period_balance"], "1025.00");
+    assert_eq!(v["total"], 0);
+    let v = call(
+        router,
+        "GET",
+        &format!("{url}&include_archived=true"),
+        Some(a),
+        Value::Null,
+        ORIGIN,
+    )
+    .await
+    .1;
+    assert_eq!(v["total"], 2);
+    assert_eq!(v["items"][0]["id"], incoming["id"]);
+    assert_eq!(
+        call(
+            router,
+            "GET",
+            &format!("{url}&from=2026-10-15&to=2026-10-01"),
+            Some(a),
+            Value::Null,
+            ORIGIN
+        )
+        .await
+        .0,
+        400
+    );
+    // Changing catalog financial meaning after use must fail without changing balances.
+    assert_eq!(call(router,"PUT",&format!("/api/accounts/{ac}"),Some(a),json!({"code":"A4","number":"","name":"Cycle 4","opening_balance":"999","active":true,"expected_version":1}),ORIGIN).await.0,409);
+    assert_eq!(call(router,"PUT",&format!("/api/histories/{ho}"),Some(a),json!({"code":"OUT","description":"Cycle 4","direction":1,"active":true,"expected_version":1}),ORIGIN).await.0,409);
+    edit["expected_version"] = json!(3);
+    edit["account_id"] = json!(target);
+    edit["history_id"] = json!(hi);
+    edit["archived"] = json!(false);
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit.clone(), ORIGIN)
+            .await
+            .0,
+        200
+    );
+    balances(router, a, ac, "1200.00", "1200.00").await;
+    balances(router, a, target, "675.00", "500.00").await;
+    let cancel = format!("{path}/cancel");
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            &cancel,
+            Some(b),
+            json!({"expected_version":4}),
+            ORIGIN
+        )
+        .await
+        .0,
+        404
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            &cancel,
+            Some(viewer),
+            json!({"expected_version":4}),
+            ORIGIN
+        )
+        .await
+        .0,
+        403
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            &cancel,
+            Some(a),
+            json!({"expected_version":3}),
+            ORIGIN
+        )
+        .await
+        .0,
+        409
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            &cancel,
+            Some(a),
+            json!({"expected_version":4}),
+            ORIGIN
+        )
+        .await
+        .0,
+        200
+    );
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            &cancel,
+            Some(a),
+            json!({"expected_version":5}),
+            ORIGIN
+        )
+        .await
+        .0,
+        200
+    );
+    edit["expected_version"] = json!(5);
+    assert_eq!(
+        call(router, "PUT", &path, Some(a), edit, ORIGIN).await.0,
+        409
+    );
+    balances(router, a, target, "500.00", "500.00").await;
+    let replay = call(router, "POST", "/api/entries", Some(a), expense, ORIGIN).await;
+    assert_eq!(replay.0, 201);
+    assert_eq!(replay.1["cancelled"], true);
+    balances(router, a, target, "500.00", "500.00").await;
+    let v = call(
+        router,
+        "GET",
+        &format!("/api/entries?account_id={target}&include_cancelled=true"),
+        Some(a),
+        Value::Null,
+        ORIGIN,
+    )
+    .await
+    .1;
+    assert_eq!(v["total"], 1);
+    // Inactive references can be retained for corrections but cannot be newly selected.
+    assert_eq!(call(router,"PUT",&format!("/api/accounts/{ac}"),Some(a),json!({"code":"A4","number":"","name":"Cycle 4","opening_balance":"1000","active":false,"expected_version":1}),ORIGIN).await.0,200);
+    assert_eq!(
+        call(
+            router,
+            "POST",
+            "/api/entries",
+            Some(a),
+            entry_input(ac, hi, "2026-10-14", "1", false),
+            ORIGIN
+        )
+        .await
+        .0,
+        409
+    );
+    let mut edit = income;
+    edit.as_object_mut().unwrap().remove("request_id");
+    edit["expected_version"] = json!(1);
+    edit["description"] = json!("Correction on inactive account");
+    assert_eq!(
+        call(
+            router,
+            "PUT",
+            &format!("/api/entries/{}", incoming["id"].as_str().unwrap()),
+            Some(a),
+            edit,
+            ORIGIN
+        )
+        .await
+        .0,
+        200
+    );
+    balances(router, a, ac, "1200.00", "1200.00").await;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    for (sql, value, expected) in [
+        (
+            "UPDATE entries SET account_id=$1",
+            Uuid::parse_str(foreign).unwrap(),
+            "23503",
+        ),
+        (
+            "UPDATE entries SET history_id=$1",
+            Uuid::parse_str(&histories[2]).unwrap(),
+            "23503",
+        ),
+        ("UPDATE entries SET updated_by=$1", other, "23503"),
+        ("UPDATE entries SET tenant_id=$1", Uuid::new_v4(), "42501"),
+    ] {
+        let mut tx = pool.begin().await.unwrap();
+        set_context(&mut tx, tenant, user).await.unwrap();
+        let err = sqlx::query(sql)
+            .bind(value)
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.as_database_error().unwrap().code().as_deref(),
+            Some(expected)
+        );
+        tx.rollback().await.unwrap();
+    }
+    let mut tx = pool.begin().await.unwrap();
+    set_context(&mut tx, tenant, user).await.unwrap();
+    let err = sqlx::query("DELETE FROM entries")
+        .execute(&mut *tx)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.as_database_error().unwrap().code().as_deref(),
+        Some("42501")
+    );
+    tx.rollback().await.unwrap();
+    // Pagination must not truncate totals or duplicate same-day rows.
+    let mut page_ids = Vec::new();
+    for _ in 0..201 {
+        let r = call(
+            router,
+            "POST",
+            "/api/entries",
+            Some(a),
+            entry_input(target, hi, "2026-10-20", "0.01", true),
+            ORIGIN,
+        )
+        .await;
+        assert_eq!(r.0, 201);
+        page_ids.push(r.1["id"].clone());
+    }
+    let endpoint = format!("/api/entries?account_id={target}&from=2026-10-20&to=2026-10-20");
+    let r = call(router, "GET", &endpoint, Some(a), Value::Null, ORIGIN).await;
+    assert_eq!(r.0, 200);
+    assert_eq!(r.1["items"].as_array().unwrap().len(), 200);
+    assert_eq!(r.1["total"], 201);
+    assert_eq!(r.1["next_offset"], 200);
+    assert_eq!(r.1["period_income"], "2.01");
+    assert_eq!(r.1["current_balance"], "502.01");
+    assert_eq!(r.1["bank_balance"], "502.01");
+    for (index, item) in r.1["items"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(item["id"], page_ids[index]);
+    }
+    let r = call(
+        router,
+        "GET",
+        &format!("{endpoint}&offset=200"),
+        Some(a),
+        Value::Null,
+        ORIGIN,
+    )
+    .await;
+    assert_eq!(r.1["items"].as_array().unwrap().len(), 1);
+    assert_eq!(r.1["items"][0]["id"], page_ids[200]);
+    assert!(r.1["next_offset"].is_null());
+    assert_eq!(r.1["current_balance"], "502.01");
+
+    println!("PASS cycle 4: financial balances, dates, edits/moves, clearing, archive/cancel, idempotency, concurrent versions, inactive references and cross-tenant RLS/FKs");
 }

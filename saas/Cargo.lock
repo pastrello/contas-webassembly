@@ -183,7 +183,7 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
 name = "contas-api"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "argon2",
  "axum",
@@ -204,14 +204,14 @@ dependencies = [
 
 [[package]]
 name = "contas-contracts"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "contas-web"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "contas-contracts",
  "serde",

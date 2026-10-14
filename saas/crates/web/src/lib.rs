@@ -3,6 +3,7 @@ use std::cell::Cell;
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 mod catalogs;
+mod entries;
 thread_local! { static BUSY:Cell<bool>=const {Cell::new(false)}; }
 fn document() -> web_sys::Document {
     web_sys::window().unwrap().document().unwrap()
@@ -110,6 +111,7 @@ async fn refresh() -> Result<(), String> {
 }
 fn logged_out() {
     catalogs::clear();
+    entries::clear();
     visible("auth", true);
     visible("workspace", false);
     show("tenant-id", "");
@@ -163,6 +165,7 @@ async fn submit(action: &str) -> Result<(), String> {
 #[wasm_bindgen(start)]
 pub fn start() {
     catalogs::init();
+    entries::init();
     for action in ["login", "register", "rename", "member", "logout"] {
         let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
             event.prevent_default();
