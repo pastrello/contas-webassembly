@@ -146,3 +146,12 @@ mod date_tests {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Report {
+    pub kind: String,
+    pub from: String,
+    pub to: String,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}

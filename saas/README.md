@@ -1,4 +1,4 @@
-# Contas SaaS — ciclo 4
+# Contas SaaS — ciclo 5
 
 Rust + WebAssembly + PostgreSQL. Projeto de estudo separado do desktop C#/SQLite. Código em `crates/api`, `crates/web`, `crates/contracts`; migrações versionadas em `migrations`.
 
@@ -10,7 +10,7 @@ Rust + WebAssembly + PostgreSQL. Projeto de estudo separado do desktop C#/SQLite
 - Usuário de consulta acessa o mesmo ambiente, sem alterar configurações ou cadastrar usuários.
 - Cada cadastro de cliente tem dados independentes. O cliente ativo vem da sessão validada no servidor; o navegador não escolhe um `tenant_id` para autorizar uma operação.
 
-Contas, históricos, lançamentos, saldos real/bancário e extrato por período estão disponíveis. Veja [regras e uso do ciclo 4](CICLO-4.md). Cadastro público é configurável; nesta fase não há confirmação de e-mail, recuperação/troca de senha, convites ou remoção de usuários pela interface. Usar apenas dados de estudo. A política de recuperação de contas e a preparação operacional antecederão a publicação para clientes reais.
+Contas, históricos, lançamentos, saldos real/bancário e extrato por período estão disponíveis. Veja [regras e uso dos lançamentos](CICLO-4.md) e [relatórios e CSV do ciclo 5](CICLO-5.md). Cadastro público é configurável; nesta fase não há confirmação de e-mail, recuperação/troca de senha, convites ou remoção de usuários pela interface. Usar apenas dados de estudo. A política de recuperação de contas e a preparação operacional antecederão a publicação para clientes reais.
 
 ## Executar no Windows
 
@@ -78,4 +78,5 @@ Test-Smoke verifica o processo HTTP real, arquivos WASM, disponibilidade e queda
 - Start-Dev cria backup PostgreSQL em .dev/backups antes de migrar e compara usuários, ambientes e vínculos antes/depois. O backup permanece somente nesta máquina; não é uma rotina de backup de produção.
 - Test-Cycle2 mantém seu nome para compatibilidade e agora cobre também o ciclo 3: confirmação de senha, valores exatos, cadastros, concorrência, permissões e isolamento das novas tabelas.
 
-Com o ciclo 4, contas e históricos usados têm saldo inicial e sentido protegidos. Correções são feitas por lançamentos explícitos. A regressão inclui quatro conexões concorrentes, idempotência e paginação; veja [validação](VALIDACAO-CICLO-4.md).
+Com o ciclo 4, contas e históricos usados têm saldo inicial e sentido protegidos. Correções são feitas por lançamentos explícitos. A regressão inclui quatro conexões concorrentes, idempotência e paginação; veja [validação do ciclo 5](VALIDACAO-CICLO-5.md).
+O extrato agora agrega e pagina no PostgreSQL, em uma única instrução SQL. A aba Relatórios traz resumo por conta, totais por histórico e CSV autenticado por período; inclui inativos e arquivados e exclui cancelados.

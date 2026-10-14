@@ -20,7 +20,7 @@
 </div>
 <div id="workspace" hidden>
 <section><p class="eyebrow">SEU AMBIENTE</p><h2 id="tenant-name"></h2><p><span id="user-name"></span> · <span id="role"></span></p><span id="tenant-id" hidden></span><form id="logout-form"><button class="secondary" type="submit">Sair</button></form></section>
-<nav class="toolbar" aria-label="Cadastros"><button id="tab-accounts" aria-pressed="true">Contas</button><button id="tab-histories" aria-pressed="false">Históricos</button><button id="tab-entries" aria-pressed="false">Lançamentos</button><button id="tab-settings" aria-pressed="false">Ambiente</button><button id="catalog-refresh" class="secondary">Atualizar listas</button></nav>
+<nav class="toolbar" aria-label="Cadastros"><button id="tab-accounts" aria-pressed="true">Contas</button><button id="tab-histories" aria-pressed="false">Históricos</button><button id="tab-entries" aria-pressed="false">Lançamentos</button><button id="tab-reports" aria-pressed="false">Relatórios</button><button id="tab-settings" aria-pressed="false">Ambiente</button><button id="catalog-refresh" class="secondary">Atualizar listas</button></nav>
 <div id="panel-accounts">
 <section class="balance"><p>Saldos iniciais das contas ativas</p><strong id="opening-total">R$ 0,00</strong><p class="note">Valores de abertura. Valores de abertura; consulte os saldos com movimentação na aba Lançamentos.</p></section>
 <section><h2>Contas</h2><label class="check"><input id="accounts-inactive" type="checkbox">Mostrar também as inativas</label><div class="table-scroll"><table><thead><tr><th>Código</th><th>Número</th><th>Nome / banco</th><th>Saldo inicial</th><th>Situação</th><th>Ação</th></tr></thead><tbody id="accounts-body"></tbody></table></div><p id="accounts-empty"></p></section>
@@ -60,6 +60,16 @@
 <button type="submit">Salvar lançamento</button><button id="entry-reset" type="button" class="secondary">Descartar edição / novo lançamento</button>
 </form><p class="note">Para compensar, desfazer compensação ou arquivar, edite o lançamento, altere a opção e salve. Cancelados permanecem disponíveis para consulta.</p></section>
 </div>
+<div id="panel-reports" hidden><section><h2>Relatórios por período</h2>
+<form id="report-form">
+<label for="report-kind">Relatório</label><select id="report-kind"><option value="accounts">Resumo por conta</option><option value="histories">Totais por histórico</option></select>
+<div class="columns"><div><label for="report-from">De (opcional)</label><input id="report-from" type="date" min="0001-01-01" max="9999-12-31"></div><div><label for="report-to">Até (opcional)</label><input id="report-to" type="date" min="0001-01-01" max="9999-12-31"></div></div>
+<button type="submit">Gerar relatório</button></form>
+<p class="note">Datas inclusivas. O saldo final considera movimentos até a data final; o bancário considera apenas compensados até essa data. Totais por histórico representam movimentação do período, sem saldos iniciais.</p>
+<p id="report-context" role="status"></p><div class="table-scroll"><table><thead id="report-head"></thead><tbody id="report-body"></tbody></table></div>
+<p><a id="report-csv" hidden>Baixar CSV atualizado deste período</a></p>
+<p class="note">O CSV é gerado novamente ao baixar e pode refletir alterações posteriores à consulta. Para mudar o período ou o tipo de relatório, altere os filtros e clique Gerar relatório.</p>
+</section></div>
 <div id="panel-settings" hidden><p class="note">Somente o administrador pode alterar o ambiente e adicionar usuários.</p>
 <div id="owner-controls" class="columns" hidden>
 <section><h2>Nome do ambiente</h2><form id="rename-form"><label for="rename-name">Nome</label><input id="rename-name" maxlength="100" required><button type="submit">Salvar nome</button></form></section>
@@ -69,6 +79,6 @@
 <label for="member-password">Senha (12 a 128 caracteres)</label><input id="member-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
 <label for="member-confirm">Confirme a senha</label><input id="member-confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required><button type="submit">Adicionar usuário</button></form></section>
 </div></div></div>
-<p class="note">Ciclo 4 · Protótipo de estudo. Use dados de teste. O aplicativo desktop continua separado.</p>
+<p class="note">Ciclo 5 · Protótipo de estudo. Use dados de teste. O aplicativo desktop continua separado.</p>
 <noscript>Ative JavaScript para carregar o aplicativo WebAssembly.</noscript>
 </main><script type="module" src="/bootstrap.js"></script></body></html>

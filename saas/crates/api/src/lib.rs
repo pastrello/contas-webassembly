@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod catalogs;
 pub mod entries;
+pub mod reports;
 use argon2::{
     password_hash::{PasswordHasher, SaltString},
     Argon2,
@@ -48,6 +49,8 @@ pub fn app(pool: PgPool, web_dir: &str, config: Config) -> Router {
         .route("/api/auth/me",get(auth::me))
         .route("/api/tenants/{id}",get(auth::tenant).put(auth::rename))
         .route("/api/members",post(auth::add_member))
+        .route("/api/reports",get(reports::get))
+        .route("/api/reports/export",get(reports::export))
         .route("/api/entries",get(entries::ledger).post(entries::create))
         .route("/api/entries/{id}",get(entries::get).put(entries::update))
         .route("/api/entries/{id}/cancel",post(entries::cancel))

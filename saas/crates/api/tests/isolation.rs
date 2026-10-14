@@ -1413,5 +1413,121 @@ async fn entry_checks(
     assert!(r.1["next_offset"].is_null());
     assert_eq!(r.1["current_balance"], "502.01");
 
+    report_checks(router, a, b, viewer, ac).await;
     println!("PASS cycle 4: financial balances, dates, edits/moves, clearing, archive/cancel, idempotency, concurrent versions, inactive references and cross-tenant RLS/FKs");
+}
+
+async fn report_checks(router: &Router, a: &str, b: &str, viewer: &str, account: &str) {
+    let url = "/api/reports?kind=accounts&from=2026-10-01&to=2026-10-20";
+    assert_eq!(
+        call(router, "GET", url, None, Value::Null, ORIGIN).await.0,
+        401
+    );
+    for invalid in [
+        "/api/reports?kind=invalid",
+        "/api/reports?kind=accounts&from=2026-02-29",
+        "/api/reports?kind=accounts&from=2026-10-20&to=2026-10-01",
+    ] {
+        assert_eq!(
+            call(router, "GET", invalid, Some(a), Value::Null, ORIGIN)
+                .await
+                .0,
+            400
+        );
+    }
+    let (status, r, _) = call(router, "GET", url, Some(a), Value::Null, ORIGIN).await;
+    assert_eq!(status, 200);
+    let rows = r["rows"].as_array().unwrap();
+    let get = |code: &str| rows.iter().find(|r| r[0] == code).unwrap();
+    assert_eq!(get("A4")[2], "Inativo");
+    assert_eq!(get("A4")[3], "1000,00");
+    assert_eq!(get("A4")[7], "1200,00");
+    assert_eq!(get("A4")[8], "1200,00");
+    assert_eq!(get("B4")[5], "2,01");
+    assert_eq!(get("B4")[6], "0,00");
+    assert_eq!(get("B4")[7], "502,01");
+    assert_eq!(get("TOTAL")[7], "1702,11");
+    assert_eq!(
+        call(router, "GET", url, Some(viewer), Value::Null, ORIGIN)
+            .await
+            .1,
+        r
+    );
+    let rb = call(router, "GET", url, Some(b), Value::Null, ORIGIN)
+        .await
+        .1;
+    assert!(!rb.to_string().contains("A4"));
+    assert!(rb.to_string().contains("C4"));
+    let history = call(
+        router,
+        "GET",
+        "/api/reports?kind=histories&from=2026-10-20&to=2026-10-20",
+        Some(a),
+        Value::Null,
+        ORIGIN,
+    )
+    .await;
+    assert_eq!(history.0, 200);
+    let rows = history.1["rows"].as_array().unwrap();
+    assert_eq!(rows.iter().find(|r| r[0] == "99").unwrap()[3], "2,01");
+    assert_eq!(rows.last().unwrap()[5], "2,01");
+    let r = call(
+        router,
+        "GET",
+        "/api/reports?kind=accounts&from=2026-10-14&to=2026-10-14",
+        Some(a),
+        Value::Null,
+        ORIGIN,
+    )
+    .await
+    .1;
+    let arow = r["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r[0] == "A4")
+        .unwrap();
+    assert_eq!(arow[4], "1200,00");
+    assert_eq!(arow[5], "0,00");
+    assert_eq!(arow[7], "1200,00");
+    // An untrusted name must remain plain text in CSV, never a spreadsheet formula.
+    assert_eq!(call(router,"PUT",&format!("/api/accounts/{account}"),Some(a),json!({"code":"A4","number":"","name":"=SUM(1)","opening_balance":"1000","active":false,"expected_version":2}),ORIGIN).await.0,200);
+    for cookie in [Some(a), Some(viewer), None] {
+        let mut req = Request::builder().uri("/api/reports/export?kind=accounts");
+        if let Some(cookie) = cookie {
+            req = req.header("cookie", cookie);
+        }
+        let response = router
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status().as_u16(),
+            if cookie.is_some() { 200 } else { 401 }
+        );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        if cookie.is_some() {
+            assert_eq!(
+                response.headers()[header::CONTENT_TYPE],
+                "text/csv; charset=utf-8"
+            );
+            assert!(response.headers()[header::CONTENT_DISPOSITION]
+                .to_str()
+                .unwrap()
+                .starts_with("attachment;"));
+            let text = String::from_utf8(
+                to_bytes(response.into_body(), 1048576)
+                    .await
+                    .unwrap()
+                    .to_vec(),
+            )
+            .unwrap();
+            assert!(text.starts_with('﻿'));
+            assert!(text.contains(r#""'=SUM(1)""#));
+            assert!(!text.contains("C4"));
+            assert!(text.contains(r#""1702,11""#));
+        }
+    }
+    println!("PASS cycle 5: account/history reports, exact totals, inclusive dates, inactive/cancelled handling, viewer isolation and authenticated safe CSV");
 }

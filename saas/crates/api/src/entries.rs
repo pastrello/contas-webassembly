@@ -254,50 +254,27 @@ pub async fn ledger(
         ));
     }
     let (mut tx, _) = auth::authorized(&state, &headers).await?;
-    // A single SQL snapshot includes account and movements, avoiding torn balance reads.
-    let rows=sqlx::query("SELECT a.opening_balance_cents,e.*,to_char(e.entry_date,'YYYY-MM-DD') AS date,h.code||' · '||h.description AS history_label FROM accounts a LEFT JOIN entries e ON e.account_id=a.id AND e.tenant_id=a.tenant_id LEFT JOIN histories h ON h.id=e.history_id AND h.tenant_id=e.tenant_id WHERE a.id=$1 ORDER BY e.entry_date,e.sequence")
-        .bind(filter.account_id).fetch_all(&mut *tx).await?;
-    let initial = rows
-        .first()
-        .ok_or_else(missing)?
-        .get::<i64, _>("opening_balance_cents") as i128;
-    let (mut current, mut bank, mut previous, mut income, mut expense) =
-        (initial, initial, initial, 0i128, 0i128);
-    let mut items = Vec::new();
-    let mut total = 0;
-    for row in rows {
-        if row.get::<Option<Uuid>, _>("id").is_none() {
-            continue;
-        }
-        let e = entry(&row);
-        let cents = row.get::<i64, _>("amount_cents") as i128;
-        let signed = cents * e.direction as i128;
-        if !e.cancelled {
-            current += signed;
-            if e.cleared {
-                bank += signed;
-            }
-            if e.date.as_str() < from {
-                previous += signed;
-            } else if e.date.as_str() <= to {
-                if e.direction == 1 {
-                    income += cents;
-                } else {
-                    expense += cents;
-                }
-            }
-        }
-        if e.date.as_str() >= from
-            && e.date.as_str() <= to
-            && (filter.include_archived || !e.archived)
-            && (filter.include_cancelled || !e.cancelled)
-        {
-            if total >= filter.offset && items.len() < 200 {
-                items.push(e);
-            }
-            total += 1;
-        }
-    }
+    // Totals and the limited page share one PostgreSQL statement/snapshot.
+    let offset = i64::try_from(filter.offset).map_err(|_| bad("Página inválida."))?;
+    let row = sqlx::query(include_str!("ledger.sql"))
+        .bind(filter.account_id)
+        .bind(from)
+        .bind(to)
+        .bind(filter.include_archived)
+        .bind(filter.include_cancelled)
+        .bind(offset)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(missing)?;
+    let initial = row.get::<i64, _>("opening_balance_cents") as i128;
+    let current = initial + number(&row, "movement")?;
+    let bank = initial + number(&row, "bank")?;
+    let previous = initial + number(&row, "previous")?;
+    let income = number(&row, "income")?;
+    let expense = number(&row, "expense")?;
+    let total = row.get::<i64, _>("total") as usize;
+    let items: Vec<Entry> = serde_json::from_value(row.get("items"))
+        .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "Extrato indisponível."))?;
     tx.commit().await?;
     let next = filter.offset.saturating_add(items.len());
     Ok(Json(Ledger {
@@ -312,4 +289,13 @@ pub async fn ledger(
         total,
         next_offset: if next < total { Some(next) } else { None },
     }))
+}
+
+pub(crate) fn number(row: &PgRow, name: &str) -> Result<i128> {
+    row.get::<String, _>(name).parse().map_err(|_| {
+        ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Total fora do limite permitido.",
+        )
+    })
 }

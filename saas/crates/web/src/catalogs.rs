@@ -339,9 +339,9 @@ pub fn init() {
     for id in ["accounts-inactive", "histories-inactive"] {
         bind(id, "change", |_| render());
     }
-    for section in ["accounts", "histories", "entries", "settings"] {
+    for section in ["accounts", "histories", "entries", "reports", "settings"] {
         bind(&format!("tab-{section}"), "click", move |_| {
-            for target in ["accounts", "histories", "entries", "settings"] {
+            for target in ["accounts", "histories", "entries", "reports", "settings"] {
                 visible(&format!("panel-{target}"), target == section);
                 element(&format!("tab-{target}"))
                     .set_attribute(
